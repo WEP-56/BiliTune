@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "BiliTune",
+    "slug": "bilitune",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "bilitune",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0A0A0C"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.bilitune.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0C"
+      },
+      "package": "com.bilitune.app",
+      "allowBackup": false,
+      "permissions": []
+    },
+    "plugins": [
+      "expo-router",
+      "expo-av"
+    ]
+  }
+}

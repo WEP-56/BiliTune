@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@bilitune/shared": ["../../packages/shared/src"],
+      "@bilitune/api": ["../../packages/api/src"],
+      "@bilitune/store": ["../../packages/store/src"]
+    }
+  },
+  "include": ["src", "vite-env.d.ts"]
+}

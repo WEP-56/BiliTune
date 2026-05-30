@@ -1,0 +1,97 @@
+name: Build Desktop (Windows)
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'apps/desktop/**'
+      - 'packages/**'
+      - '.github/workflows/build-desktop.yml'
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version tag'
+        required: false
+        default: ''
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        required: false
+        default: ''
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies (packages)
+        working-directory: packages/shared
+        run: npm install --no-audit --no-fund
+
+      - name: Install dependencies (api)
+        working-directory: packages/api
+        run: npm install --no-audit --no-fund
+
+      - name: Install dependencies (store)
+        working-directory: packages/store
+        run: npm install --no-audit --no-fund
+
+      - name: Install dependencies (desktop)
+        working-directory: apps/desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Build Vite SPA
+        working-directory: apps/desktop
+        run: npx vite build
+
+      - name: Package Electron app
+        working-directory: apps/desktop
+        run: npx electron-builder --win --publish=never
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BiliTune-Windows-Setup
+          path: apps/desktop/release/BiliTune-Setup-*.exe
+          retention-days: 30
+
+      - name: Upload portable (if exists)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BiliTune-Windows-Portable
+          path: apps/desktop/release/*.exe
+          retention-days: 30
+
+  create-release:
+    needs: build-windows
+    if: github.event_name == 'push' || github.event.inputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: BiliTune-Windows-Setup
+          path: release/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ inputs.version || github.event.inputs.version || 'latest' }}
+          name: BiliTune Desktop ${{ inputs.version || github.event.inputs.version || 'Latest' }}
+          files: release/*
+          draft: false
+          prerelease: ${{ inputs.version == '' && github.event.inputs.version == '' }}
+          generate_release_notes: true

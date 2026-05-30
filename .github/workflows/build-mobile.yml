@@ -1,0 +1,114 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/**'
+      - '.github/workflows/build-mobile.yml'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '构建类型'
+        required: true
+        type: choice
+        default: 'debug'
+        options: ['debug', 'release']
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ---- 安装 JS 依赖 ----
+      - name: Install workspace packages
+        run: |
+          cd packages/shared && npm install --no-audit --no-fund
+          cd ../../packages/api && npm install --no-audit --no-fund
+          cd ../../packages/store && npm install --no-audit --no-fund
+
+      - name: Install mobile dependencies
+        working-directory: apps/mobile
+        run: npm install --no-audit --no-fund
+
+      # ---- 生成 Android 原生工程 ----
+      - name: Generate Android project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --clean
+
+      # ---- 签名密钥 ----
+      # 直接用 Android 默认 debug keystore，零配置出包
+      # 如果要上架 Google Play，替换成你自己的 keystore
+      - name: Setup keystore (debug)
+        if: github.event.inputs.build_type != 'release'
+        working-directory: apps/mobile/android/app
+        run: |
+          # Android SDK 自带 debug.keystore，直接复制
+          keytool -genkeypair -v \
+            -storetype PKCS12 \
+            -keystore debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -storepass android -keypass android \
+            -noprompt 2>/dev/null || true
+
+      - name: Setup keystore (release)
+        if: github.event.inputs.build_type == 'release'
+        working-directory: apps/mobile/android/app
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > bilitune.keystore
+          ls -la bilitune.keystore
+
+      # ---- 构建 APK ----
+      - name: Build APK (debug)
+        if: github.event.inputs.build_type != 'release'
+        working-directory: apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Build APK (release)
+        if: github.event.inputs.build_type == 'release'
+        working-directory: apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=../app/bilitune.keystore \
+            -Pandroid.injected.signing.store.password=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Pandroid.injected.signing.key.alias=${{ secrets.KEY_ALIAS }} \
+            -Pandroid.injected.signing.key.password=${{ secrets.KEY_PASSWORD }}
+
+      # ---- 上传产物 ----
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BiliTune-Android-${{ github.event.inputs.build_type || 'debug' }}
+          path: apps/mobile/android/app/build/outputs/apk/**/*.apk
+          retention-days: 30
+
+      - name: Upload to Release
+        if: github.event.inputs.build_type == 'release'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: android-${{ github.ref_name }}
+          name: BiliTune Android Release
+          files: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          draft: true

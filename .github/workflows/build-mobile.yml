@@ -44,7 +44,7 @@ jobs:
 
       - name: Install mobile dependencies
         working-directory: apps/mobile
-        run: npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund --legacy-peer-deps
 
       # ---- 生成 Android 原生工程 ----
       - name: Generate Android project

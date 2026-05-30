@@ -101,14 +101,3 @@ jobs:
           name: BiliTune-Android-${{ github.event.inputs.build_type || 'debug' }}
           path: apps/mobile/android/app/build/outputs/apk/**/*.apk
           retention-days: 30
-
-      - name: Upload to Release
-        if: github.event.inputs.build_type == 'release'
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: android-${{ github.ref_name }}
-          name: BiliTune Android Release
-          files: apps/mobile/android/app/build/outputs/apk/release/*.apk
-          draft: true

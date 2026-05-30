@@ -1,0 +1,40 @@
+# @bbplayer/orpheus
+
+BBPlayer 高性能核心音频播放模块。
+
+## 简介
+
+这是一个为 BBPlayer 项目定制的音频播放库，旨在替代第三方库以提供与 Android Media3 (ExoPlayer) 和 AVFoundation 更紧密的集成，并针对 Bilibili 音频流逻辑提供原生层支持。
+
+## 功能特性
+
+- **Bilibili 集成**：自动处理 Bilibili 音频流协议，支持高码率解析。
+- **双层缓存机制**：包含独立的下载缓存和边下边播 LRU 缓存。
+- **Android Media3**：基于最新的 Media3 架构，提供更好的稳定性。
+- **桌面歌词支持**：实现系统级桌面歌词悬浮窗的原生支持。
+- **高性能**：针对移动端性能优化的零拷贝提取与流处理。
+
+## 文档
+
+详细的 API 文档和使用说明请参阅目录下的 [docs](./docs) 文件夹。
+
+## IOS 支援
+
+目前这个库只进行了基础的 IOS 适配（俗称：「管生不管养」），因为我们目前没有开发 IOS 端的计划。以下列出了一部分 Android 端有但 IOS 还没有实现（或无法实现）的特性：
+
+- 桌面歌词（无法实现）
+- 频谱
+- 无缝播放
+- 响度均衡
+- 封面下载（用于离线播放）
+- 批量导出下载歌曲 (Android-only)
+
+## 声明
+
+该库主要供 BBPlayer 内部使用。虽然代码开源，但我们主要关注满足 BBPlayer 的功能需求。
+
+## 关于 Lyricon
+
+本项目在 `packages/orpheus/android` 中内置了来自 [tomakino/lyricon](https://github.com/tomakino/lyricon) 的部分核心代码，用于处理 Lyricon 相关的连接逻辑。
+
+采用直接克隆代码而非引入依赖库的方式，是因为 Lyricon 使用了 kotlin 2.3.0，而我们主项目的 kotlin 版本更低，导致 metadata 不兼容，无法直接引入。

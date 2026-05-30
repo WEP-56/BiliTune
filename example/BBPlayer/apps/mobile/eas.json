@@ -1,0 +1,68 @@
+{
+	"cli": {
+		"version": ">= 13.4.2",
+		"appVersionSource": "local"
+	},
+	"build": {
+		"dev": {
+			"developmentClient": true,
+			"distribution": "internal",
+			"channel": "development",
+			"android": {
+				"gradleCommand": ":app:assembleDebug"
+			},
+			"env": {
+				"APP_VARIANT": "development",
+				"ABI_FILTERS": "arm64-v8a"
+			}
+		},
+		"prod-v8a": {
+			"autoIncrement": false,
+			"android": {
+				"buildType": "apk",
+				"gradleCommand": ":app:assembleRelease"
+			},
+			"channel": "production",
+			"env": {
+				"APP_VARIANT": "production",
+				"ABI_FILTERS": "arm64-v8a"
+			}
+		},
+		"prod-ci": {
+			"autoIncrement": false,
+			"android": {
+				"buildType": "apk",
+				"gradleCommand": ":app:assembleRelease"
+			},
+			"channel": "production",
+			"env": {
+				"APP_VARIANT": "production"
+			}
+		},
+		"prod-universal": {
+			"autoIncrement": false,
+			"android": {
+				"buildType": "apk",
+				"gradleCommand": ":app:assembleRelease"
+			},
+			"channel": "production",
+			"env": {
+				"APP_VARIANT": "production",
+				"ABI_FILTERS": "armeabi-v7a,arm64-v8a,x86,x86_64"
+			}
+		},
+		"preview": {
+			"autoIncrement": false,
+			"distribution": "internal",
+			"android": {
+				"buildType": "apk",
+				"gradleCommand": ":app:assembleRelease"
+			},
+			"channel": "preview",
+			"env": {
+				"APP_VARIANT": "preview",
+				"ABI_FILTERS": "arm64-v8a"
+			}
+		}
+	}
+}

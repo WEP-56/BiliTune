@@ -1,0 +1,27 @@
+plugins {
+    id 'com.android.library'
+    id 'expo-module-gradle-plugin'
+}
+
+import groovy.json.JsonSlurper
+
+def packageJsonFile = new File(projectDir, '../package.json')
+def packageJson = new JsonSlurper().parseText(packageJsonFile.text)
+
+group = 'expo.modules.imagethemecolors'
+version = packageJson.version
+
+android {
+    namespace "expo.modules.imagethemecolors"
+    defaultConfig {
+        versionCode 1
+        versionName packageJson.version
+    }
+    lintOptions {
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation "androidx.palette:palette-ktx:1.0.0"
+}

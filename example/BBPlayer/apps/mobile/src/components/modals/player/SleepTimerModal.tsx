@@ -1,0 +1,181 @@
+import { Orpheus } from '@bbplayer/orpheus'
+import {
+	Host,
+	OutlinedTextField,
+	Text as ComposeText,
+} from '@expo/ui/jetpack-compose'
+import { width } from '@expo/ui/jetpack-compose/modifiers'
+import { useEffect, useState } from 'react'
+import { StyleSheet, View } from 'react-native'
+import { Dialog, Text } from 'react-native-paper'
+
+import Button from '@/components/common/Button'
+import { useSleepTimerEndTime } from '@/hooks/queries/orpheus'
+import { useModalStore } from '@/hooks/stores/useModalStore'
+import useTextFieldState from '@/hooks/useTextFieldState'
+import { toastAndLogError } from '@/utils/error-handling'
+import { formatDurationToHHMMSS } from '@/utils/time'
+import toast from '@/utils/toast'
+
+const PRESET_DURATIONS = [15, 30, 45, 60] // in minutes
+
+const SleepTimerModal = () => {
+	const close = useModalStore((state) => state.close)
+	const { data: sleepTimerEndAt } = useSleepTimerEndTime()
+	const [remainingTime, setRemainingTime] = useState<number | null>(null)
+	const [customInputVisible, setCustomInputVisible] = useState(false)
+	const [customMinutes, setCustomMinutes] = useState('')
+	const customMinutesState = useTextFieldState(customMinutes)
+
+	useEffect(() => {
+		if (sleepTimerEndAt) {
+			const interval = setInterval(() => {
+				const remaining = Math.round((sleepTimerEndAt - Date.now()) / 1000)
+				if (remaining > 0) {
+					setRemainingTime(remaining)
+				} else {
+					setRemainingTime(null)
+					clearInterval(interval)
+				}
+			}, 1000)
+			const remaining = Math.round((sleepTimerEndAt - Date.now()) / 1000)
+			setRemainingTime(remaining > 0 ? remaining : null)
+
+			return () => clearInterval(interval)
+		} else {
+			setRemainingTime(null)
+		}
+	}, [sleepTimerEndAt])
+
+	const handleSetTimer = async (minutes: number) => {
+		try {
+			await Orpheus.setSleepTimer(minutes * 60 * 1000)
+			toast.success('设置定时器成功')
+			close('SleepTimer')
+		} catch (e) {
+			toastAndLogError('设置定时器失败', e, 'Modal.SleepTimer')
+		}
+	}
+
+	const handleCancelTimer = async () => {
+		try {
+			await Orpheus.cancelSleepTimer()
+			toast.success('取消定时器成功')
+			close('SleepTimer')
+		} catch (e) {
+			toastAndLogError('取消定时器失败', e, 'Modal.SleepTimer')
+		}
+	}
+
+	return (
+		<>
+			<Dialog.Title>定时关闭</Dialog.Title>
+			<Dialog.Content>
+				{remainingTime ? (
+					<View style={styles.remainingTimeContainer}>
+						<Text variant='headlineMedium'>
+							剩余 {formatDurationToHHMMSS(remainingTime)}
+						</Text>
+					</View>
+				) : (
+					<Text style={styles.promptText}>选择一个预设时间或自定义</Text>
+				)}
+				<View style={styles.presetContainer}>
+					{PRESET_DURATIONS.map((minutes) => (
+						<Button
+							key={minutes}
+							mode='contained-tonal'
+							onPress={() => handleSetTimer(minutes)}
+							style={styles.presetButton}
+						>
+							{minutes}
+							{'\u2009'}分钟
+						</Button>
+					))}
+				</View>
+				{customInputVisible ? (
+					<View style={styles.customInputContainer}>
+						<Host
+							matchContents
+							style={styles.customInput}
+						>
+							<OutlinedTextField
+								value={customMinutesState}
+								onValueChange={setCustomMinutes}
+								autoFocus
+								singleLine
+								keyboardOptions={{ keyboardType: 'number' }}
+								modifiers={[width(120)]}
+							>
+								<OutlinedTextField.Label>
+									<ComposeText>分钟</ComposeText>
+								</OutlinedTextField.Label>
+							</OutlinedTextField>
+						</Host>
+						<Button
+							mode='contained'
+							onPress={async () => {
+								const minutes = parseInt(customMinutes, 10)
+								if (!isNaN(minutes) && minutes > 0) {
+									await handleSetTimer(minutes)
+								}
+							}}
+						>
+							设置
+						</Button>
+					</View>
+				) : (
+					<Button
+						mode='text'
+						onPress={() => setCustomInputVisible(true)}
+					>
+						自定义
+					</Button>
+				)}
+			</Dialog.Content>
+			<Dialog.Actions>
+				{sleepTimerEndAt && (
+					<Button
+						onPress={handleCancelTimer}
+						textColor='red'
+					>
+						取消定时器
+					</Button>
+				)}
+				<Button onPress={() => close('SleepTimer')}>关闭</Button>
+			</Dialog.Actions>
+		</>
+	)
+}
+
+const styles = StyleSheet.create({
+	remainingTimeContainer: {
+		alignItems: 'center',
+		marginBottom: 16,
+	},
+	promptText: {
+		textAlign: 'center',
+		marginBottom: 16,
+	},
+	presetContainer: {
+		flexDirection: 'row',
+		flexWrap: 'wrap',
+		justifyContent: 'center',
+		gap: 8,
+		marginBottom: 8,
+	},
+	presetButton: {
+		flexBasis: '45%',
+		flexGrow: 1,
+	},
+	customInputContainer: {
+		flexDirection: 'row',
+		alignItems: 'center',
+	},
+	customInput: {
+		flex: 1,
+		marginRight: 8,
+	},
+})
+
+export default SleepTimerModal

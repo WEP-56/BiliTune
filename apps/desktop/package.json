@@ -1,6 +1,8 @@
 {
   "name": "@bilitune/desktop",
   "version": "1.0.0",
+  "description": "Spotify/Apple Music style Bilibili music client for Windows",
+  "author": "BiliTune",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
@@ -57,7 +59,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "public/favicon.svg",
+      "icon": "build/icon.png",
       "artifactName": "BiliTune-Setup-${version}.${ext}"
     },
     "nsis": {
@@ -77,7 +79,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "public/favicon.svg",
+      "icon": "build/icon.png",
       "artifactName": "BiliTune-${version}.${ext}"
     },
     "mac": {
@@ -87,7 +89,7 @@
           "arch": ["x64", "arm64"]
         }
       ],
-      "icon": "public/favicon.svg",
+      "icon": "build/icon.png",
       "artifactName": "BiliTune-${version}.${ext}"
     }
   }

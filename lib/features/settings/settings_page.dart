@@ -98,7 +98,7 @@ class SettingsPage extends ConsumerWidget {
               value: account == null
                   ? '未登录'
                   : 'MID ${account.mid}${account.isVip ? ' · 大会员' : ''}',
-              onTap: () => _showAccountDialog(context),
+              onTap: () => showAccountDialog(context),
             ),
             if (auth.errorMessage != null)
               Padding(
@@ -129,14 +129,14 @@ class SettingsPage extends ConsumerWidget {
       ],
     );
   }
-
-  void _showAccountDialog(BuildContext context) {
-    showDialog<void>(context: context, builder: (_) => const _AccountDialog());
-  }
 }
 
-class _AccountDialog extends ConsumerWidget {
-  const _AccountDialog();
+void showAccountDialog(BuildContext context) {
+  showDialog<void>(context: context, builder: (_) => const AccountDialog());
+}
+
+class AccountDialog extends ConsumerWidget {
+  const AccountDialog({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -259,7 +259,7 @@ class _AccountDialog extends ConsumerWidget {
                             Navigator.of(context).pop();
                             showDialog<void>(
                               context: context,
-                              builder: (_) => const _QrLoginDialog(),
+                              builder: (_) => const QrLoginDialog(),
                             );
                           },
                   ),
@@ -276,7 +276,7 @@ class _AccountDialog extends ConsumerWidget {
                             Navigator.of(context).pop();
                             showDialog<void>(
                               context: context,
-                              builder: (_) => const _CookieLoginDialog(),
+                              builder: (_) => const CookieLoginDialog(),
                             );
                           },
                   ),
@@ -297,14 +297,14 @@ class _AccountDialog extends ConsumerWidget {
   }
 }
 
-class _QrLoginDialog extends ConsumerStatefulWidget {
-  const _QrLoginDialog();
+class QrLoginDialog extends ConsumerStatefulWidget {
+  const QrLoginDialog({super.key});
 
   @override
-  ConsumerState<_QrLoginDialog> createState() => _QrLoginDialogState();
+  ConsumerState<QrLoginDialog> createState() => _QrLoginDialogState();
 }
 
-class _QrLoginDialogState extends ConsumerState<_QrLoginDialog> {
+class _QrLoginDialogState extends ConsumerState<QrLoginDialog> {
   Timer? _pollTimer;
 
   @override
@@ -440,14 +440,14 @@ class _QrLoginDialogState extends ConsumerState<_QrLoginDialog> {
   }
 }
 
-class _CookieLoginDialog extends ConsumerStatefulWidget {
-  const _CookieLoginDialog();
+class CookieLoginDialog extends ConsumerStatefulWidget {
+  const CookieLoginDialog({super.key});
 
   @override
-  ConsumerState<_CookieLoginDialog> createState() => _CookieLoginDialogState();
+  ConsumerState<CookieLoginDialog> createState() => _CookieLoginDialogState();
 }
 
-class _CookieLoginDialogState extends ConsumerState<_CookieLoginDialog> {
+class _CookieLoginDialogState extends ConsumerState<CookieLoginDialog> {
   final _controller = TextEditingController();
 
   @override

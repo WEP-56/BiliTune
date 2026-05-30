@@ -40,9 +40,11 @@ dependencies:
   dio: ^5.9.2
   crypto: ^3.0.7
   shared_preferences: ^2.5.5
+  path_provider: ^2.1.5
   media_kit: ^1.2.6
   media_kit_libs_audio: ^1.0.7
   qr_flutter: ^4.1.0
+  window_manager: ^0.5.1
 
 dev_dependencies:
   flutter_test:

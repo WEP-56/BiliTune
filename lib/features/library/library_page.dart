@@ -26,7 +26,7 @@ class LibraryPage extends ConsumerWidget {
     final auth = ref.watch(authProvider);
     final library = ref.watch(libraryProvider);
     final playback = ref.watch(playbackProvider);
-    final notifier = ref.read(playbackProvider.notifier);
+    final playbackNotifier = ref.read(playbackProvider.notifier);
     final libraryNotifier = ref.read(libraryProvider.notifier);
 
     final folders = library.folders.isEmpty
@@ -49,19 +49,22 @@ class LibraryPage extends ConsumerWidget {
               .toList(growable: false)
         : library.folders;
 
-    final history = library.recentHistory.isEmpty
+    final recentTracks = library.recentHistory.isEmpty
         ? MockData.tracks
         : library.recentHistory;
-    final selectedTracks = library.selectedFolderTracks.isEmpty
-        ? MockData.tracks.take(6).toList(growable: false)
-        : library.selectedFolderTracks;
+    final isRecentSelected = library.selectedFolderId == null;
+    final selectedTracks = isRecentSelected
+        ? recentTracks
+        : (library.selectedFolderTracks.isEmpty
+              ? MockData.tracks.take(6).toList(growable: false)
+              : library.selectedFolderTracks);
 
     if (!auth.isSignedIn) {
       return ListView(
         padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, AppSpacing.s12),
         children: [
           Text(
-            '我的音乐',
+            '收藏',
             style: AppTypography.titleL.copyWith(color: colors.textPrimary),
           ),
           const SizedBox(height: AppSpacing.s4),
@@ -82,7 +85,7 @@ class LibraryPage extends ConsumerWidget {
                 ),
                 const SizedBox(height: AppSpacing.s2),
                 Text(
-                  '收藏夹、历史记录和下载任务都会绑定到当前账号。',
+                  '收藏夹、历史记录和下载任务会绑定到当前账号。',
                   style: AppTypography.body.copyWith(
                     color: colors.textSecondary,
                   ),
@@ -104,7 +107,7 @@ class LibraryPage extends ConsumerWidget {
       padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, AppSpacing.s12),
       children: [
         Text(
-          '我的音乐',
+          '收藏',
           style: AppTypography.titleL.copyWith(color: colors.textPrimary),
         ),
         const SizedBox(height: AppSpacing.s2),
@@ -124,7 +127,7 @@ class LibraryPage extends ConsumerWidget {
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: folders.length,
+          itemCount: folders.length + 1,
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 190,
             mainAxisExtent: 256,
@@ -132,14 +135,35 @@ class LibraryPage extends ConsumerWidget {
             mainAxisSpacing: AppSpacing.s4,
           ),
           itemBuilder: (_, i) {
-            final folder = folders[i];
+            if (i == 0) {
+              return ContentCard(
+                item: CardItem(
+                  id: 'recent',
+                  title: '最近播放',
+                  subtitle: '${recentTracks.length} 首',
+                  gradientSeed: 12,
+                ),
+                width: 180,
+                onTap: libraryNotifier.selectRecent,
+                onPlay: () {
+                  if (recentTracks.isNotEmpty) {
+                    playbackNotifier.playTrack(
+                      recentTracks.first,
+                      queue: recentTracks,
+                    );
+                  }
+                },
+              );
+            }
+
+            final folder = folders[i - 1];
             return ContentCard(
               item: folder.toCardItem(),
               width: 180,
               onTap: () => libraryNotifier.selectFolder(folder.mediaId),
               onPlay: () {
                 if (selectedTracks.isNotEmpty) {
-                  notifier.playTrack(
+                  playbackNotifier.playTrack(
                     selectedTracks.first,
                     queue: selectedTracks,
                   );
@@ -149,7 +173,11 @@ class LibraryPage extends ConsumerWidget {
           },
         ),
         const SizedBox(height: AppSpacing.s8),
-        SectionHeader(title: library.selectedFolder?.title ?? '收藏夹内容'),
+        SectionHeader(
+          title: isRecentSelected
+              ? '最近播放'
+              : library.selectedFolder?.title ?? '收藏夹内容',
+        ),
         const SizedBox(height: AppSpacing.s2),
         for (int i = 0; i < selectedTracks.length; i++)
           TrackRow(
@@ -159,20 +187,10 @@ class LibraryPage extends ConsumerWidget {
             isPlaying:
                 playback.isPlaying &&
                 playback.track?.id == selectedTracks[i].id,
-            onTap: () =>
-                notifier.playTrack(selectedTracks[i], queue: selectedTracks),
-          ),
-        const SizedBox(height: AppSpacing.s8),
-        SectionHeader(title: '最近播放'),
-        const SizedBox(height: AppSpacing.s2),
-        for (int i = 0; i < history.length; i++)
-          TrackRow(
-            index: i,
-            track: history[i],
-            isCurrent: playback.track?.id == history[i].id,
-            isPlaying:
-                playback.isPlaying && playback.track?.id == history[i].id,
-            onTap: () => notifier.playTrack(history[i], queue: history),
+            onTap: () => playbackNotifier.playTrack(
+              selectedTracks[i],
+              queue: selectedTracks,
+            ),
           ),
       ],
     );

@@ -37,7 +37,7 @@ const List<NavDestination> navDestinations = <NavDestination>[
     route: '/search',
   ),
   NavDestination(
-    label: '我的音乐',
+    label: '收藏',
     icon: Icons.library_music_outlined,
     selectedIcon: Icons.library_music_rounded,
     route: '/library',
@@ -74,7 +74,7 @@ mobileTabs =
         branch: 1,
       ),
       (
-        label: '音乐库',
+        label: '收藏',
         icon: Icons.library_music_outlined,
         selectedIcon: Icons.library_music_rounded,
         branch: 2,

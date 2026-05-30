@@ -76,7 +76,7 @@ class DownloadsPage extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.s4),
         if (downloadState.tasks.isEmpty)
-          _EmptyState(title: '还没有下载任务', subtitle: '可先从当前播放内容生成一个任务，或后续接入下载按钮。')
+          _EmptyState(title: '还没有下载任务', subtitle: '播放任意搜索结果后，可把当前播放内容加入下载队列。')
         else
           for (final task in downloadState.tasks)
             _DownloadRow(
@@ -134,7 +134,7 @@ class _StorageCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s3),
           Text(
-            '任务会先进入本地队列，下载引擎接入后再执行。',
+            '任务会保存到系统下载目录的 BiliTune 文件夹，当前先下载可播放音频流。',
             style: AppTypography.caption.copyWith(color: colors.textSecondary),
           ),
         ],
@@ -201,6 +201,9 @@ class _DownloadRow extends StatelessWidget {
       DownloadTaskStatus.failed => '失败',
       DownloadTaskStatus.cancelled => '已取消',
     };
+    final canControl =
+        task.status != DownloadTaskStatus.completed &&
+        task.status != DownloadTaskStatus.cancelled;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
@@ -283,13 +286,18 @@ class _DownloadRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      onPressed: task.status == DownloadTaskStatus.paused
+                      onPressed: !canControl
+                          ? null
+                          : (task.status == DownloadTaskStatus.paused ||
+                                task.status == DownloadTaskStatus.failed)
                           ? onResume
                           : onPause,
                       iconSize: 20,
                       visualDensity: VisualDensity.compact,
                       icon: Icon(
-                        task.status == DownloadTaskStatus.paused
+                        task.status == DownloadTaskStatus.failed
+                            ? Icons.refresh_rounded
+                            : task.status == DownloadTaskStatus.paused
                             ? Icons.play_arrow_rounded
                             : Icons.pause_rounded,
                         color: colors.textSecondary,

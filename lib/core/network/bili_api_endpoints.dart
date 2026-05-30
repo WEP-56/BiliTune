@@ -26,12 +26,18 @@ class BiliApiEndpoints {
   static final searchDefault = api('/x/web-interface/wbi/search/default');
   static final searchType = api('/x/web-interface/wbi/search/type');
   static final popular = api('/x/web-interface/popular');
+  static final rankingV2 = api('/x/web-interface/ranking/v2');
   static final videoView = api('/x/web-interface/view');
   static final videoPlayUrl = api('/x/player/wbi/playurl');
   static final audioStreamUrl = api('/audio/music-service-c/url');
   static final favoriteFolders = api('/x/v3/fav/folder/created/list-all');
   static final favoriteFolderInfo = api('/x/v3/fav/folder/info');
   static final favoriteFolderItems = api('/x/v3/fav/resource/list');
+  static final favoriteFolderAdd = api('/x/v3/fav/folder/add');
+  static final favoriteFolderEdit = api('/x/v3/fav/folder/edit');
+  static final favoriteFolderDelete = api('/x/v3/fav/folder/del');
+  static final favoriteResourceDeal = api('/x/v3/fav/resource/deal');
+  static final favoriteResourceBatchDelete = api('/x/v3/fav/resource/batch-del');
   static final historyCursor = api('/x/web-interface/history/cursor');
 
   static final hotWords = search('/main/hotword');

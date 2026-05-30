@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart' as mk;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/network/bili_cookie_store.dart';
@@ -304,40 +305,55 @@ final authProvider = NotifierProvider<AuthNotifier, AuthState>(
   AuthNotifier.new,
 );
 
+enum SearchMode { music, all }
+
 @immutable
 class SearchState {
   const SearchState({
     this.query = '',
+    this.mode = SearchMode.music,
     this.defaultKeyword,
     this.results = const <Track>[],
     this.hotWords = const <String>[],
     this.suggestions = const <String>[],
     this.history = const <String>[],
+    this.page = 0,
+    this.hasMore = false,
     this.isLoading = false,
+    this.isLoadingMore = false,
     this.errorMessage,
   });
 
   final String query;
+  final SearchMode mode;
   final String? defaultKeyword;
   final List<Track> results;
   final List<String> hotWords;
   final List<String> suggestions;
   final List<String> history;
+  final int page;
+  final bool hasMore;
   final bool isLoading;
+  final bool isLoadingMore;
   final String? errorMessage;
 
   SearchState copyWith({
     String? query,
+    SearchMode? mode,
     Object? defaultKeyword = _unset,
     List<Track>? results,
     List<String>? hotWords,
     List<String>? suggestions,
     List<String>? history,
+    int? page,
+    bool? hasMore,
     bool? isLoading,
+    bool? isLoadingMore,
     Object? errorMessage = _unset,
   }) {
     return SearchState(
       query: query ?? this.query,
+      mode: mode ?? this.mode,
       defaultKeyword: identical(defaultKeyword, _unset)
           ? this.defaultKeyword
           : defaultKeyword as String?,
@@ -345,7 +361,10 @@ class SearchState {
       hotWords: hotWords ?? this.hotWords,
       suggestions: suggestions ?? this.suggestions,
       history: history ?? this.history,
+      page: page ?? this.page,
+      hasMore: hasMore ?? this.hasMore,
       isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       errorMessage: identical(errorMessage, _unset)
           ? this.errorMessage
           : errorMessage as String?,
@@ -379,24 +398,39 @@ class SearchNotifier extends Notifier<SearchState> {
         defaultKeyword: defaultKeyword,
         hotWords: hotWords.take(12).toList(growable: false),
       );
-    } catch (error) {
-      state = state.copyWith(errorMessage: error.toString());
+    } catch (_) {
+      state = state.copyWith(defaultKeyword: null, hotWords: const <String>[]);
     }
   }
 
-  Future<void> search(String query) async {
+  Future<void> search(String query, {SearchMode? mode}) async {
     final keyword = query.trim();
+    final nextMode = mode ?? state.mode;
     if (keyword.isEmpty) {
-      state = state.copyWith(query: '', results: const <Track>[]);
+      state = state.copyWith(
+        query: '',
+        mode: nextMode,
+        results: const <Track>[],
+        page: 0,
+        hasMore: false,
+      );
       return;
     }
 
-    state = state.copyWith(query: keyword, isLoading: true, errorMessage: null);
+    state = state.copyWith(
+      query: keyword,
+      mode: nextMode,
+      isLoading: true,
+      isLoadingMore: false,
+      errorMessage: null,
+    );
 
     try {
-      final results = await ref
-          .read(biliMusicRepositoryProvider)
-          .searchTracks(keyword);
+      final repository = ref.read(biliMusicRepositoryProvider);
+      final results = switch (nextMode) {
+        SearchMode.music => await repository.searchMusicTracks(keyword),
+        SearchMode.all => await repository.searchTracks(keyword),
+      };
       final history = <String>[
         keyword,
         ...state.history.where((item) => item != keyword),
@@ -405,11 +439,62 @@ class SearchNotifier extends Notifier<SearchState> {
       state = state.copyWith(
         results: results,
         history: history,
+        page: 1,
+        hasMore: results.length >= 20,
         isLoading: false,
       );
     } catch (error) {
       state = state.copyWith(isLoading: false, errorMessage: error.toString());
     }
+  }
+
+  Future<void> loadMore() async {
+    final keyword = state.query.trim();
+    if (keyword.isEmpty ||
+        state.isLoading ||
+        state.isLoadingMore ||
+        !state.hasMore) {
+      return;
+    }
+
+    final nextPage = state.page + 1;
+    state = state.copyWith(isLoadingMore: true, errorMessage: null);
+
+    try {
+      final repository = ref.read(biliMusicRepositoryProvider);
+      final nextResults = switch (state.mode) {
+        SearchMode.music => await repository.searchMusicTracks(
+          keyword,
+          page: nextPage,
+        ),
+        SearchMode.all => await repository.searchTracks(
+          keyword,
+          page: nextPage,
+        ),
+      };
+      final merged = _mergeTracks([...state.results, ...nextResults]);
+      state = state.copyWith(
+        results: merged,
+        page: nextPage,
+        hasMore: nextResults.length >= 20,
+        isLoadingMore: false,
+      );
+    } catch (error) {
+      state = state.copyWith(
+        isLoadingMore: false,
+        errorMessage: error.toString(),
+      );
+    }
+  }
+
+  List<Track> _mergeTracks(Iterable<Track> tracks) {
+    final seen = <String>{};
+    final merged = <Track>[];
+    for (final track in tracks) {
+      final key = track.bvid ?? track.aid?.toString() ?? track.id;
+      if (seen.add(key)) merged.add(track);
+    }
+    return merged;
   }
 
   Future<void> loadSuggestions(String query) async {
@@ -505,8 +590,13 @@ class DiscoverNotifier extends Notifier<DiscoverState> {
       final repository = ref.read(biliMusicRepositoryProvider);
       final local = ref.read(appLocalStoreProvider);
       final recentHistory = await local.readSearchHistory();
-      final featuredTrack = await repository.discoverFeaturedTrack();
-      final shelves = await repository.discoverShelves();
+      final featuredTrack =
+          await repository.musicFeaturedTrack() ??
+          await repository.discoverFeaturedTrack();
+      final musicShelves = await repository.musicShelves();
+      final shelves = musicShelves.isNotEmpty
+          ? musicShelves
+          : await repository.discoverShelves();
       final quickPicks = await repository.discoverQuickPicks(
         recentHistory: recentHistory,
       );
@@ -616,15 +706,11 @@ class LibraryNotifier extends Notifier<LibraryState> {
       final folders = mid == null
           ? const <BiliFavoriteFolder>[]
           : await repository.favoriteFolders(mid);
-      final selectedFolderId = folders.isEmpty ? null : folders.first.mediaId;
-      final selectedFolderTracks = selectedFolderId == null
-          ? const <Track>[]
-          : await repository.favoriteFolderTracks(selectedFolderId);
       final recentHistory = await _loadHistory(repository);
       state = state.copyWith(
         folders: folders,
-        selectedFolderId: selectedFolderId,
-        selectedFolderTracks: selectedFolderTracks,
+        selectedFolderId: null,
+        selectedFolderTracks: const <Track>[],
         recentHistory: recentHistory,
         isLoading: false,
       );
@@ -657,9 +743,76 @@ class LibraryNotifier extends Notifier<LibraryState> {
     }
   }
 
+  void selectRecent() {
+    state = state.copyWith(
+      selectedFolderId: null,
+      selectedFolderTracks: const <Track>[],
+      errorMessage: null,
+    );
+  }
+
   Future<void> refresh() async {
     _bootstrapped = false;
     await _bootstrap();
+  }
+
+  Future<void> createFavoriteFolder({
+    required String title,
+    String intro = '',
+    bool isPrivate = false,
+  }) async {
+    final trimmed = title.trim();
+    if (trimmed.isEmpty) return;
+
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      await ref.read(biliMusicRepositoryProvider).createFavoriteFolder(
+            title: trimmed,
+            intro: intro.trim(),
+            isPrivate: isPrivate,
+          );
+      await _bootstrap();
+    } catch (error) {
+      state = state.copyWith(isLoading: false, errorMessage: error.toString());
+    }
+  }
+
+  Future<void> addTrackToFavoriteFolder(Track track, int mediaId) async {
+    state = state.copyWith(errorMessage: null);
+    try {
+      await ref.read(biliMusicRepositoryProvider).addTrackToFavoriteFolder(
+            track: track,
+            mediaId: mediaId,
+          );
+      if (state.selectedFolderId == mediaId) {
+        final tracks = await ref
+            .read(biliMusicRepositoryProvider)
+            .favoriteFolderTracks(mediaId);
+        state = state.copyWith(selectedFolderTracks: tracks);
+      }
+    } catch (error) {
+      state = state.copyWith(errorMessage: error.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> removeTrackFromFavoriteFolder(Track track, int mediaId) async {
+    state = state.copyWith(errorMessage: null);
+    try {
+      await ref.read(biliMusicRepositoryProvider).removeTrackFromFavoriteFolder(
+            track: track,
+            mediaId: mediaId,
+          );
+      if (state.selectedFolderId == mediaId) {
+        final tracks = await ref
+            .read(biliMusicRepositoryProvider)
+            .favoriteFolderTracks(mediaId);
+        state = state.copyWith(selectedFolderTracks: tracks);
+      }
+    } catch (error) {
+      state = state.copyWith(errorMessage: error.toString());
+      rethrow;
+    }
   }
 }
 
@@ -716,6 +869,8 @@ class DownloadQueueState {
 
 class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   bool _bootstrapped = false;
+  final _cancelTokens = <String, CancelToken>{};
+  final _lastProgressPersistAt = <String, DateTime>{};
 
   @override
   DownloadQueueState build() {
@@ -749,17 +904,28 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     final tasks = <DownloadTask>[task, ...state.tasks];
     await _persist(tasks);
     state = state.copyWith(tasks: tasks, errorMessage: null);
+    await _startDownload(task.id);
   }
 
-  Future<void> pauseTask(String id) async => _updateTask(
-    id,
-    (task) => task.copyWith(status: DownloadTaskStatus.paused),
-  );
+  Future<void> pauseTask(String id) async {
+    final token = _cancelTokens.remove(id);
+    if (token != null && !token.isCancelled) {
+      token.cancel('paused');
+      return;
+    }
+    await _updateTask(
+      id,
+      (task) => task.copyWith(status: DownloadTaskStatus.paused),
+    );
+  }
 
-  Future<void> resumeTask(String id) async => _updateTask(
-    id,
-    (task) => task.copyWith(status: DownloadTaskStatus.queued),
-  );
+  Future<void> resumeTask(String id) async {
+    await _updateTask(
+      id,
+      (task) => task.copyWith(status: DownloadTaskStatus.queued),
+    );
+    await _startDownload(id);
+  }
 
   Future<void> completeTask(String id) async => _updateTask(
     id,
@@ -776,6 +942,10 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   );
 
   Future<void> removeTask(String id) async {
+    final token = _cancelTokens.remove(id);
+    if (token != null && !token.isCancelled) {
+      token.cancel('removed');
+    }
     final tasks = state.tasks
         .where((task) => task.id != id)
         .toList(growable: false);
@@ -784,6 +954,10 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   }
 
   Future<void> clear() async {
+    for (final token in _cancelTokens.values) {
+      if (!token.isCancelled) token.cancel('cleared');
+    }
+    _cancelTokens.clear();
     await _persist(const <DownloadTask>[]);
     state = state.copyWith(tasks: const <DownloadTask>[]);
   }
@@ -802,6 +976,173 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         .toList(growable: false);
     await _persist(tasks);
     state = state.copyWith(tasks: tasks, errorMessage: null);
+  }
+
+  Future<void> _startDownload(String id) async {
+    final task = _taskById(id);
+    if (task == null || task.status == DownloadTaskStatus.completed) return;
+    if (_cancelTokens.containsKey(id)) return;
+
+    final token = CancelToken();
+    _cancelTokens[id] = token;
+    await _updateTask(
+      id,
+      (task) => task.copyWith(
+        status: DownloadTaskStatus.downloading,
+        errorMessage: null,
+      ),
+    );
+
+    try {
+      final source = await ref
+          .read(biliMusicRepositoryProvider)
+          .resolvePlaybackSource(_trackFromTask(task));
+      final directory = await _downloadDirectory();
+      final savePath =
+          task.savePath ?? _joinPath(directory.path, _fileName(task, source));
+
+      await _updateTask(
+        id,
+        (task) => task.copyWith(
+          savePath: savePath,
+          audioCodecs: _audioCodecs(source),
+          audioBandwidth: source.bandwidth,
+        ),
+      );
+
+      await ref
+          .read(biliDioProvider)
+          .download(
+            source.url,
+            savePath,
+            cancelToken: token,
+            options: Options(
+              headers: const <String, String>{
+                'User-Agent': biliUserAgent,
+                'Referer': biliReferer,
+                'Origin': 'https://www.bilibili.com',
+              },
+              receiveTimeout: const Duration(minutes: 5),
+            ),
+            onReceiveProgress: (received, total) {
+              _setProgress(id, received, total > 0 ? total : null);
+            },
+          );
+
+      final bytes = await File(savePath).length();
+      await _updateTask(
+        id,
+        (task) => task.copyWith(
+          status: DownloadTaskStatus.completed,
+          downloadedBytes: bytes,
+          totalBytes: bytes,
+          errorMessage: null,
+        ),
+      );
+    } catch (error) {
+      if ((error is DioException && CancelToken.isCancel(error)) ||
+          token.isCancelled) {
+        await _updateTask(
+          id,
+          (task) => task.copyWith(status: DownloadTaskStatus.paused),
+        );
+      } else {
+        await failTask(id, error.toString());
+      }
+    } finally {
+      _cancelTokens.remove(id);
+      _lastProgressPersistAt.remove(id);
+    }
+  }
+
+  void _setProgress(String id, int received, int? total) {
+    final tasks = state.tasks
+        .map(
+          (task) => task.id == id
+              ? task.copyWith(downloadedBytes: received, totalBytes: total)
+              : task,
+        )
+        .toList(growable: false);
+    state = state.copyWith(tasks: tasks, errorMessage: null);
+
+    final now = DateTime.now();
+    final last = _lastProgressPersistAt[id];
+    if (last == null ||
+        now.difference(last) > const Duration(milliseconds: 700)) {
+      _lastProgressPersistAt[id] = now;
+      unawaited(_persist(tasks));
+    }
+  }
+
+  DownloadTask? _taskById(String id) {
+    for (final task in state.tasks) {
+      if (task.id == id) return task;
+    }
+    return null;
+  }
+
+  Track _trackFromTask(DownloadTask task) {
+    return Track(
+      id:
+          task.bvid ??
+          task.aid?.toString() ??
+          task.audioId?.toString() ??
+          task.id,
+      title: task.title,
+      artist: task.artist,
+      duration: Duration.zero,
+      type: task.type,
+      gradientSeed: task.gradientSeed,
+      coverUrl: task.coverUrl,
+      bvid: task.bvid,
+      aid: task.aid,
+      cid: task.cid,
+      audioId: task.audioId,
+    );
+  }
+
+  Future<Directory> _downloadDirectory() async {
+    final base =
+        await getDownloadsDirectory() ??
+        await getApplicationDocumentsDirectory();
+    final directory = Directory(_joinPath(base.path, 'BiliTune'));
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    return directory;
+  }
+
+  String _joinPath(String left, String right) {
+    final separator = Platform.pathSeparator;
+    return left.endsWith(separator) ? '$left$right' : '$left$separator$right';
+  }
+
+  String _fileName(DownloadTask task, BiliPlaybackSource source) {
+    final title = _sanitizeFileName(task.title).trim();
+    final artist = _sanitizeFileName(task.artist).trim();
+    final prefix = artist.isEmpty ? title : '$artist - $title';
+    final safePrefix = prefix.isEmpty ? task.id : prefix;
+    final suffix = task.id.length <= 8
+        ? _sanitizeFileName(task.id)
+        : _sanitizeFileName(task.id.substring(task.id.length - 8));
+    return '${safePrefix.substring(0, min(safePrefix.length, 96))}-$suffix.${_extension(source)}';
+  }
+
+  String _sanitizeFileName(String value) {
+    return value.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_');
+  }
+
+  String _extension(BiliPlaybackSource source) {
+    final codecs = source.codecs?.toLowerCase() ?? '';
+    final mimeType = source.mimeType?.toLowerCase() ?? '';
+    if (source.isLossless || codecs.contains('flac')) return 'flac';
+    if (mimeType.contains('mp4') || codecs.contains('mp4a')) return 'm4a';
+    return 'm4s';
+  }
+
+  String? _audioCodecs(BiliPlaybackSource source) {
+    if (source.isLossless) return 'flac';
+    return source.codecs;
   }
 
   Future<void> _persist(List<DownloadTask> tasks) async {

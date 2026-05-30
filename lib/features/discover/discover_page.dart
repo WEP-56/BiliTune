@@ -53,6 +53,12 @@ class DiscoverPage extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.s4),
         ],
+        SectionHeader(
+          title: '历史',
+          actionLabel: '查看全部',
+          onAction: () => context.go('/search'),
+        ),
+        const SizedBox(height: AppSpacing.s4),
         _QuickGrid(
           isDesktop: isDesktop,
           items: quickPicks,
@@ -63,7 +69,14 @@ class DiscoverPage extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.s8),
         for (final shelf in shelves) ...[
-          SectionHeader(title: shelf.title, actionLabel: '查看全部'),
+          SectionHeader(
+            title: shelf.title,
+            actionLabel: '查看全部',
+            onAction: () {
+              search.search(shelf.title);
+              context.go('/search');
+            },
+          ),
           const SizedBox(height: AppSpacing.s4),
           _Shelf(
             shelf: shelf,

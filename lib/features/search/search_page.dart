@@ -20,7 +20,6 @@ class SearchPage extends ConsumerStatefulWidget {
 class _SearchPageState extends ConsumerState<SearchPage> {
   final TextEditingController _controller = TextEditingController();
   Timer? _debounce;
-  int _tab = 0;
 
   @override
   void dispose() {
@@ -31,7 +30,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
   void _submitSearch(String value) {
     _debounce?.cancel();
-    ref.read(searchProvider.notifier).search(value);
+    ref
+        .read(searchProvider.notifier)
+        .search(value, mode: ref.read(searchProvider).mode);
   }
 
   void _scheduleSuggestions(String value) {
@@ -52,7 +53,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final state = ref.watch(searchProvider);
     final play = ref.read(playbackProvider.notifier);
 
-    final tabs = <String>['综合', '视频', '音频', 'UP主'];
+    final tabs = <({String label, SearchMode mode})>[
+      (label: '音乐', mode: SearchMode.music),
+      (label: '全站视频', mode: SearchMode.all),
+    ];
     final query = state.query.trim();
     final displayItems = state.results;
 
@@ -72,18 +76,25 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               Padding(
                 padding: const EdgeInsets.only(right: AppSpacing.s5),
                 child: GestureDetector(
-                  onTap: () => setState(() => _tab = i),
+                  onTap: () {
+                    final value = _controller.text.trim().isEmpty
+                        ? state.query
+                        : _controller.text;
+                    ref
+                        .read(searchProvider.notifier)
+                        .search(value, mode: tabs[i].mode);
+                  },
                   child: MouseRegion(
                     cursor: SystemMouseCursors.click,
                     child: Column(
                       children: [
                         Text(
-                          tabs[i],
+                          tabs[i].label,
                           style: AppTypography.body.copyWith(
-                            color: i == _tab
+                            color: tabs[i].mode == state.mode
                                 ? colors.textPrimary
                                 : colors.textSecondary,
-                            fontWeight: i == _tab
+                            fontWeight: tabs[i].mode == state.mode
                                 ? FontWeight.w700
                                 : FontWeight.w400,
                           ),
@@ -92,7 +103,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         Container(
                           height: 2,
                           width: 20,
-                          color: i == _tab ? colors.brand : Colors.transparent,
+                          color: tabs[i].mode == state.mode
+                              ? colors.brand
+                              : Colors.transparent,
                         ),
                       ],
                     ),
@@ -104,7 +117,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         const SizedBox(height: AppSpacing.s4),
         if (state.isLoading)
           const LinearProgressIndicator(minHeight: 2)
-        else if (state.errorMessage != null) ...[
+        else if (query.isNotEmpty && state.errorMessage != null) ...[
           Text(
             state.errorMessage!,
             style: AppTypography.caption.copyWith(color: colors.error),
@@ -134,7 +147,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
           const SizedBox(height: AppSpacing.s8),
         ],
         if (displayItems.isNotEmpty) ...[
-          SectionHeader(title: '搜索结果'),
+          SectionHeader(
+            title: state.mode == SearchMode.music ? '音乐结果' : '搜索结果',
+          ),
           const SizedBox(height: AppSpacing.s2),
           for (int i = 0; i < displayItems.length; i++)
             TrackRow(
@@ -142,6 +157,24 @@ class _SearchPageState extends ConsumerState<SearchPage> {
               track: displayItems[i],
               onTap: () => play.playTrack(displayItems[i], queue: displayItems),
             ),
+          if (state.hasMore || state.isLoadingMore) ...[
+            const SizedBox(height: AppSpacing.s4),
+            Center(
+              child: OutlinedButton.icon(
+                icon: state.isLoadingMore
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.expand_more_rounded),
+                label: Text(state.isLoadingMore ? '加载中' : '查看更多'),
+                onPressed: state.isLoadingMore
+                    ? null
+                    : () => ref.read(searchProvider.notifier).loadMore(),
+              ),
+            ),
+          ],
         ] else ...[
           SectionHeader(title: '热门搜索'),
           const SizedBox(height: AppSpacing.s4),

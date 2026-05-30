@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +22,10 @@ class BiliTuneApp extends ConsumerWidget {
       darkTheme: AppTheme.dark(),
       themeMode: themeMode,
       routerConfig: appRouter,
+      builder: (context, child) {
+        final content = child ?? const SizedBox.shrink();
+        return Platform.isWindows ? ExcludeSemantics(child: content) : content;
+      },
     );
   }
 }

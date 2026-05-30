@@ -64,6 +64,9 @@ class BiliApiService {
     String keyword, {
     int page = 1,
     int pageSize = 20,
+    String order = 'totalrank',
+    int? tid,
+    int? duration,
   }) async {
     final response = await _get(
       BiliApiEndpoints.searchType,
@@ -73,6 +76,9 @@ class BiliApiService {
         'search_type': 'video',
         'page': page,
         'page_size': pageSize,
+        'order': order,
+        ...?(tid == null ? null : <String, dynamic>{'tids': tid}),
+        ...?(duration == null ? null : <String, dynamic>{'duration': duration}),
       },
     );
     final data = _checkedData(response);
@@ -84,6 +90,23 @@ class BiliApiService {
           .toList();
     }
     return const <Map<String, dynamic>>[];
+  }
+
+  Future<List<Map<String, dynamic>>> rankingVideos({
+    required int rid,
+    String type = 'all',
+  }) async {
+    final response = await _get(
+      BiliApiEndpoints.rankingV2,
+      wbi: true,
+      query: <String, dynamic>{
+        'rid': rid,
+        'type': type,
+        'web_location': '333.934',
+      },
+    );
+    final data = _checkedData(response);
+    return _extractMapList(data['list'] ?? data['item'] ?? data['result']);
   }
 
   Future<Map<String, dynamic>> videoView({String? bvid, int? aid}) async {
@@ -207,6 +230,85 @@ class BiliApiService {
     return _checkedData(response);
   }
 
+  Future<Map<String, dynamic>> createFavoriteFolder({
+    required String title,
+    String intro = '',
+    int privacy = 0,
+  }) async {
+    final response = await _postForm(
+      BiliApiEndpoints.favoriteFolderAdd,
+      data: <String, dynamic>{
+        'title': title,
+        'intro': intro,
+        'privacy': privacy,
+      },
+      requireCsrf: true,
+    );
+    return _checkedData(response);
+  }
+
+  Future<Map<String, dynamic>> editFavoriteFolder({
+    required int mediaId,
+    required String title,
+    String intro = '',
+    int privacy = 0,
+  }) async {
+    final response = await _postForm(
+      BiliApiEndpoints.favoriteFolderEdit,
+      data: <String, dynamic>{
+        'media_id': mediaId,
+        'title': title,
+        'intro': intro,
+        'privacy': privacy,
+      },
+      requireCsrf: true,
+    );
+    return _checkedData(response);
+  }
+
+  Future<void> deleteFavoriteFolders(List<int> mediaIds) async {
+    final response = await _postForm(
+      BiliApiEndpoints.favoriteFolderDelete,
+      data: <String, dynamic>{'media_ids': mediaIds.join(',')},
+      requireCsrf: true,
+    );
+    _checkedData(response);
+  }
+
+  Future<void> dealFavoriteResource({
+    required int aid,
+    required List<int> addMediaIds,
+    required List<int> delMediaIds,
+    int type = 2,
+  }) async {
+    final response = await _postForm(
+      BiliApiEndpoints.favoriteResourceDeal,
+      data: <String, dynamic>{
+        'rid': aid,
+        'type': type,
+        'add_media_ids': addMediaIds.join(','),
+        'del_media_ids': delMediaIds.join(','),
+      },
+      requireCsrf: true,
+    );
+    _checkedData(response);
+  }
+
+  Future<void> deleteFavoriteResources({
+    required int mediaId,
+    required List<int> aids,
+  }) async {
+    final response = await _postForm(
+      BiliApiEndpoints.favoriteResourceBatchDelete,
+      data: <String, dynamic>{
+        'media_id': mediaId,
+        'resources': aids.map((aid) => '$aid:2').join(','),
+      },
+      requireCsrf: true,
+    );
+    _checkedData(response);
+  }
+
   Future<Map<String, dynamic>> historyCursor({
     String type = 'all',
     int? cursor,
@@ -237,6 +339,28 @@ class BiliApiService {
     final merged = <String, dynamic>{...uri.queryParameters, ...?query};
     final params = wbi ? await _wbiSigner.sign(merged) : merged;
     return _dio.getUri(uri.replace(queryParameters: _stringQuery(params)));
+  }
+
+  Future<Response<dynamic>> _postForm(
+    Uri uri, {
+    Map<String, dynamic>? data,
+    bool requireCsrf = false,
+  }) async {
+    final form = <String, dynamic>{...?data};
+    if (requireCsrf) {
+      final credential = await _cookieStore.readCredential();
+      final csrf = credential?.biliJct;
+      if (csrf == null || csrf.isEmpty) {
+        throw BiliApiException('Missing bili_jct csrf token.');
+      }
+      form['csrf'] = csrf;
+    }
+
+    return _dio.postUri(
+      uri,
+      data: FormData.fromMap(form),
+      options: Options(contentType: Headers.formUrlEncodedContentType),
+    );
   }
 
   Map<String, dynamic> _checkedData(

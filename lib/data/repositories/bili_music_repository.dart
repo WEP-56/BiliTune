@@ -123,9 +123,99 @@ class BiliMusicRepository {
     return shelves;
   }
 
+  Future<Track?> musicFeaturedTrack() async {
+    for (final zone in _musicZones) {
+      try {
+        final items = await _api.rankingVideos(rid: zone.rid, type: zone.type);
+        if (items.isNotEmpty) return _trackFromRankingVideo(items.first);
+      } catch (_) {}
+    }
+
+    try {
+      final items = await _api.rankingVideos(rid: _musicRootRid);
+      if (items.isNotEmpty) return _trackFromRankingVideo(items.first);
+    } catch (_) {}
+
+    return null;
+  }
+
+  Future<List<Shelf>> musicShelves() async {
+    final shelves = <Shelf>[];
+
+    for (final zone in _musicZones) {
+      try {
+        final items = await _api.rankingVideos(rid: zone.rid, type: zone.type);
+        if (items.isNotEmpty) {
+          shelves.add(
+            Shelf(
+              title: zone.title,
+              items: items
+                  .map(_cardFromRankingVideo)
+                  .take(8)
+                  .toList(growable: false),
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    if (shelves.isEmpty) {
+      try {
+        final items = await _api.rankingVideos(rid: _musicRootRid);
+        if (items.isNotEmpty) {
+          shelves.add(
+            Shelf(
+              title: '音乐区排行',
+              items: items
+                  .map(_cardFromRankingVideo)
+                  .take(8)
+                  .toList(growable: false),
+            ),
+          );
+        }
+      } catch (_) {}
+    }
+
+    return shelves;
+  }
+
   Future<List<BiliFavoriteFolder>> favoriteFolders(int upMid) async {
     final items = await _api.favoriteFolders(upMid: upMid, type: 2);
     return items.map(_folderFromJson).toList(growable: false);
+  }
+
+  Future<void> createFavoriteFolder({
+    required String title,
+    String intro = '',
+    bool isPrivate = false,
+  }) async {
+    await _api.createFavoriteFolder(
+      title: title,
+      intro: intro,
+      privacy: isPrivate ? 1 : 0,
+    );
+  }
+
+  Future<void> addTrackToFavoriteFolder({
+    required Track track,
+    required int mediaId,
+  }) async {
+    final aid = track.aid ?? (await _hydrateVideoTrack(track)).aid;
+    if (aid == null) {
+      throw StateError('当前内容没有可收藏的 av 号。');
+    }
+    await _api.dealFavoriteResource(aid: aid, addMediaIds: [mediaId], delMediaIds: const <int>[]);
+  }
+
+  Future<void> removeTrackFromFavoriteFolder({
+    required Track track,
+    required int mediaId,
+  }) async {
+    final aid = track.aid ?? (await _hydrateVideoTrack(track)).aid;
+    if (aid == null) {
+      throw StateError('当前内容没有可移除的 av 号。');
+    }
+    await _api.deleteFavoriteResources(mediaId: mediaId, aids: [aid]);
   }
 
   Future<List<Track>> favoriteFolderTracks(
@@ -194,6 +284,43 @@ class BiliMusicRepository {
       pageSize: pageSize,
     );
     return items.map(_trackFromSearchVideo).toList(growable: false);
+  }
+
+  Future<List<Track>> searchMusicTracks(
+    String input, {
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    final keyword = input.trim();
+    if (keyword.isEmpty) return const <Track>[];
+
+    final directBvid = _extractBvid(keyword);
+    if (directBvid != null) {
+      return <Track>[await trackFromBvid(directBvid)];
+    }
+
+    final directAid = _extractAid(keyword);
+    if (directAid != null) {
+      return <Track>[await trackFromAid(directAid)];
+    }
+
+    final zoneItems = await _api.searchVideos(
+      keyword,
+      page: page,
+      pageSize: pageSize,
+      tid: _musicRootRid,
+    );
+    final genericItems = zoneItems.length >= pageSize
+        ? const <Map<String, dynamic>>[]
+        : await _api.searchVideos(keyword, page: page, pageSize: pageSize);
+
+    final tracks = _mergeTracks([
+      ...zoneItems.map(_trackFromSearchVideo),
+      ...genericItems.where(_isMusicSearchItem).map(_trackFromSearchVideo),
+      if (zoneItems.isEmpty) ...genericItems.map(_trackFromSearchVideo),
+    ]);
+
+    return tracks.take(pageSize).toList(growable: false);
   }
 
   Future<Track> trackFromBvid(String bvid) async {
@@ -502,6 +629,26 @@ class BiliMusicRepository {
     );
   }
 
+  CardItem _cardFromRankingVideo(Map<String, dynamic> item) {
+    final track = _trackFromRankingVideo(item);
+    return CardItem(
+      id: track.id,
+      title: track.title,
+      subtitle: track.artist.isNotEmpty
+          ? track.artist
+          : (track.playCount > 0 ? Format.count(track.playCount) : ''),
+      gradientSeed: track.gradientSeed,
+      coverUrl: track.coverUrl,
+      type: track.type,
+      duration: track.duration,
+      playCount: track.playCount,
+      bvid: track.bvid,
+      aid: track.aid,
+      cid: track.cid,
+      artist: track.artist,
+    );
+  }
+
   BiliFavoriteFolder _folderFromJson(Map<String, dynamic> item) {
     final mediaId = _asInt(item['id']) ?? _asInt(item['fid']) ?? 0;
     final fid = _asInt(item['fid']) ?? mediaId;
@@ -536,6 +683,33 @@ class BiliMusicRepository {
     return ContentType.video;
   }
 
+  Track _trackFromRankingVideo(Map<String, dynamic> item) {
+    final bvid = item['bvid']?.toString();
+    final aid = _asInt(item['aid']);
+    final id = bvid ?? (aid == null ? item.hashCode.toString() : 'av$aid');
+    final owner = _asMap(item['owner']);
+    return Track(
+      id: id,
+      title: _stripHtml(item['title']?.toString() ?? ''),
+      artist:
+          owner['name']?.toString() ??
+          item['author']?.toString() ??
+          item['up_name']?.toString() ??
+          '',
+      duration: _parseDuration(item['duration']),
+      type: ContentType.video,
+      gradientSeed: id.hashCode.abs(),
+      coverUrl: _normalizeImageUrl(item['pic']?.toString()),
+      playCount: _asInt(item['play']) ?? 0,
+      bvid: bvid,
+      aid: aid,
+      cid: _asInt(item['cid']),
+      webUrl: bvid == null
+          ? null
+          : Uri.parse('https://www.bilibili.com/video/$bvid'),
+    );
+  }
+
   String? _extractBvid(String input) =>
       RegExp(r'BV[0-9A-Za-z]{10}').firstMatch(input)?.group(0);
 
@@ -549,6 +723,30 @@ class BiliMusicRepository {
 
   String _stripHtml(String value) =>
       value.replaceAll(RegExp(r'<[^>]+>'), '').replaceAll('&amp;', '&');
+
+  bool _isMusicSearchItem(Map<String, dynamic> item) {
+    final tid =
+        _asInt(item['typeid']) ?? _asInt(item['tid']) ?? _asInt(item['tids']);
+    if (tid != null && _musicSearchTypeIds.contains(tid)) return true;
+
+    final text = [
+      item['typename'],
+      item['type'],
+      item['tag'],
+      item['title'],
+    ].whereType<Object>().join(' ').toLowerCase();
+    return _musicSearchKeywords.any(text.contains);
+  }
+
+  List<Track> _mergeTracks(Iterable<Track> tracks) {
+    final seen = <String>{};
+    final merged = <Track>[];
+    for (final track in tracks) {
+      final key = track.bvid ?? track.aid?.toString() ?? track.id;
+      if (seen.add(key)) merged.add(track);
+    }
+    return merged;
+  }
 
   String? _normalizeImageUrl(String? url) {
     if (url == null || url.isEmpty) return null;
@@ -636,3 +834,52 @@ const _audioQualitySort = <int>[
   30250,
   30251,
 ];
+
+const _musicRootRid = 3;
+
+const _musicSearchTypeIds = <int>{
+  3,
+  28,
+  31,
+  30,
+  59,
+  193,
+  29,
+  130,
+  243,
+  244,
+  265,
+  266,
+  267,
+  1003,
+};
+
+const _musicSearchKeywords = <String>{
+  'music',
+  'mv',
+  'vocaloid',
+  'utau',
+  'cover',
+  '原创音乐',
+  '翻唱',
+  '演奏',
+  '音乐',
+  '音乐现场',
+};
+
+const _musicZones = <_MusicZone>[
+  _MusicZone('原创音乐', 28),
+  _MusicZone('翻唱', 31),
+  _MusicZone('VOCALOID·UTAU', 30),
+  _MusicZone('演奏', 59),
+  _MusicZone('MV', 193),
+  _MusicZone('音乐现场', 29),
+];
+
+class _MusicZone {
+  const _MusicZone(this.title, this.rid) : type = 'all';
+
+  final String title;
+  final int rid;
+  final String type;
+}

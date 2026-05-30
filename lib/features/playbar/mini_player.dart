@@ -27,7 +27,9 @@ class MiniPlayer extends ConsumerWidget {
       child: Container(
         height: AppLayout.miniPlayerHeight,
         margin: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s2, vertical: AppSpacing.s1),
+          horizontal: AppSpacing.s2,
+          vertical: AppSpacing.s1,
+        ),
         decoration: BoxDecoration(
           color: colors.bgSurface,
           borderRadius: AppRadius.mdAll,
@@ -44,8 +46,7 @@ class MiniPlayer extends ConsumerWidget {
             ),
             Expanded(
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
                 child: Row(
                   children: [
                     SizedBox(
@@ -62,17 +63,23 @@ class MiniPlayer extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(track?.title ?? '—',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.body.copyWith(
-                                  color: colors.textPrimary,
-                                  fontWeight: FontWeight.w600)),
-                          Text(track?.artist ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.caption
-                                  .copyWith(color: colors.textSecondary)),
+                          Text(
+                            track?.title ?? '—',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.body.copyWith(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            track?.artist ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.caption.copyWith(
+                              color: colors.textSecondary,
+                            ),
+                          ),
                         ],
                       ),
                     ),

@@ -1,36 +1,74 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
-import '../../data/mock/mock_data.dart';
+import '../../state/providers.dart';
+import '../../shared/widgets/section_header.dart';
+import '../../shared/widgets/track_row.dart';
 
-/// Search page (design doc §6.3): search field, category tabs, hot words and
-/// recent searches. Input is non-functional in M0 (real search lands in M2).
-class SearchPage extends StatefulWidget {
+class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key});
 
   @override
-  State<SearchPage> createState() => _SearchPageState();
+  ConsumerState<SearchPage> createState() => _SearchPageState();
 }
 
-class _SearchPageState extends State<SearchPage> {
+class _SearchPageState extends ConsumerState<SearchPage> {
+  final TextEditingController _controller = TextEditingController();
+  Timer? _debounce;
   int _tab = 0;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submitSearch(String value) {
+    _debounce?.cancel();
+    ref.read(searchProvider.notifier).search(value);
+  }
+
+  void _scheduleSuggestions(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      ref.read(searchProvider.notifier).loadSuggestions(value);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final width = MediaQuery.sizeOf(context).width;
-    final pad = width >= AppLayout.desktopBreakpoint ? AppSpacing.s6 : AppSpacing.s4;
+    final pad = width >= AppLayout.desktopBreakpoint
+        ? AppSpacing.s6
+        : AppSpacing.s4;
+    final state = ref.watch(searchProvider);
+    final play = ref.read(playbackProvider.notifier);
+
+    final tabs = <String>['综合', '视频', '音频', 'UP主'];
+    final query = state.query.trim();
+    final displayItems = state.results;
 
     return ListView(
       padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, AppSpacing.s12),
       children: [
-        _SearchField(),
+        _SearchField(
+          controller: _controller,
+          hintText: state.defaultKeyword ?? '搜索歌曲、UP主，或粘贴 BV / 链接',
+          onChanged: _scheduleSuggestions,
+          onSubmitted: _submitSearch,
+        ),
         const SizedBox(height: AppSpacing.s4),
         Row(
           children: [
-            for (int i = 0; i < MockData.searchTabs.length; i++)
+            for (int i = 0; i < tabs.length; i++)
               Padding(
                 padding: const EdgeInsets.only(right: AppSpacing.s5),
                 child: GestureDetector(
@@ -40,13 +78,14 @@ class _SearchPageState extends State<SearchPage> {
                     child: Column(
                       children: [
                         Text(
-                          MockData.searchTabs[i],
+                          tabs[i],
                           style: AppTypography.body.copyWith(
                             color: i == _tab
                                 ? colors.textPrimary
                                 : colors.textSecondary,
-                            fontWeight:
-                                i == _tab ? FontWeight.w700 : FontWeight.w400,
+                            fontWeight: i == _tab
+                                ? FontWeight.w700
+                                : FontWeight.w400,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -62,35 +101,109 @@ class _SearchPageState extends State<SearchPage> {
               ),
           ],
         ),
-        const SizedBox(height: AppSpacing.s8),
-        Text('热门搜索',
-            style: AppTypography.titleM.copyWith(color: colors.textPrimary)),
         const SizedBox(height: AppSpacing.s4),
-        Wrap(
-          spacing: AppSpacing.s3,
-          runSpacing: AppSpacing.s3,
-          children: [
-            for (final word in MockData.hotWords) _Chip(label: word),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.s8),
-        Text('搜索历史',
-            style: AppTypography.titleM.copyWith(color: colors.textPrimary)),
-        const SizedBox(height: AppSpacing.s4),
-        Wrap(
-          spacing: AppSpacing.s3,
-          runSpacing: AppSpacing.s3,
-          children: [
-            for (final word in MockData.hotWords.take(4))
-              _Chip(label: word, removable: true),
-          ],
-        ),
+        if (state.isLoading)
+          const LinearProgressIndicator(minHeight: 2)
+        else if (state.errorMessage != null) ...[
+          Text(
+            state.errorMessage!,
+            style: AppTypography.caption.copyWith(color: colors.error),
+          ),
+          const SizedBox(height: AppSpacing.s4),
+        ],
+        if (query.isNotEmpty && state.suggestions.isNotEmpty) ...[
+          SectionHeader(title: '搜索建议'),
+          const SizedBox(height: AppSpacing.s4),
+          Wrap(
+            spacing: AppSpacing.s3,
+            runSpacing: AppSpacing.s3,
+            children: [
+              for (final word in state.suggestions)
+                _Chip(
+                  label: word,
+                  onTap: () {
+                    _controller.text = word;
+                    _controller.selection = TextSelection.collapsed(
+                      offset: word.length,
+                    );
+                    _submitSearch(word);
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s8),
+        ],
+        if (displayItems.isNotEmpty) ...[
+          SectionHeader(title: '搜索结果'),
+          const SizedBox(height: AppSpacing.s2),
+          for (int i = 0; i < displayItems.length; i++)
+            TrackRow(
+              index: i,
+              track: displayItems[i],
+              onTap: () => play.playTrack(displayItems[i], queue: displayItems),
+            ),
+        ] else ...[
+          SectionHeader(title: '热门搜索'),
+          const SizedBox(height: AppSpacing.s4),
+          Wrap(
+            spacing: AppSpacing.s3,
+            runSpacing: AppSpacing.s3,
+            children: [
+              for (final word in state.hotWords.take(12))
+                _Chip(
+                  label: word,
+                  onTap: () {
+                    _controller.text = word;
+                    _controller.selection = TextSelection.collapsed(
+                      offset: word.length,
+                    );
+                    _submitSearch(word);
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s8),
+          SectionHeader(title: '搜索历史'),
+          const SizedBox(height: AppSpacing.s4),
+          Wrap(
+            spacing: AppSpacing.s3,
+            runSpacing: AppSpacing.s3,
+            children: [
+              for (final word in state.history.take(8))
+                _Chip(
+                  label: word,
+                  removable: true,
+                  onTap: () {
+                    _controller.text = word;
+                    _controller.selection = TextSelection.collapsed(
+                      offset: word.length,
+                    );
+                    _submitSearch(word);
+                  },
+                  onRemove: () =>
+                      ref.read(searchProvider.notifier).removeHistory(word),
+                ),
+            ],
+          ),
+        ],
       ],
     );
   }
 }
 
 class _SearchField extends StatelessWidget {
+  const _SearchField({
+    required this.controller,
+    required this.hintText,
+    required this.onChanged,
+    required this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<String> onSubmitted;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
@@ -107,16 +220,22 @@ class _SearchField extends StatelessWidget {
           const SizedBox(width: AppSpacing.s3),
           Expanded(
             child: TextField(
+              controller: controller,
               style: AppTypography.body.copyWith(color: colors.textPrimary),
               cursorColor: colors.brand,
+              textInputAction: TextInputAction.search,
+              onChanged: onChanged,
+              onSubmitted: onSubmitted,
               decoration: InputDecoration(
                 isCollapsed: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: AppSpacing.s3),
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: AppSpacing.s3,
+                ),
                 border: InputBorder.none,
-                hintText: '搜索歌曲、UP主，或粘贴 BV / 链接',
-                hintStyle: AppTypography.body
-                    .copyWith(color: colors.textTertiary),
+                hintText: hintText,
+                hintStyle: AppTypography.body.copyWith(
+                  color: colors.textTertiary,
+                ),
               ),
             ),
           ),
@@ -127,32 +246,52 @@ class _SearchField extends StatelessWidget {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.label, this.removable = false});
+  const _Chip({
+    required this.label,
+    this.removable = false,
+    this.onTap,
+    this.onRemove,
+  });
 
   final String label;
   final bool removable;
+  final VoidCallback? onTap;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s4, vertical: AppSpacing.s2),
-      decoration: BoxDecoration(
-        color: colors.bgElevated,
-        borderRadius: AppRadius.pillAll,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label,
-              style:
-                  AppTypography.body.copyWith(color: colors.textSecondary)),
-          if (removable) ...[
-            const SizedBox(width: AppSpacing.s2),
-            Icon(Icons.close_rounded, size: 14, color: colors.textTertiary),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.s4,
+          vertical: AppSpacing.s2,
+        ),
+        decoration: BoxDecoration(
+          color: colors.bgElevated,
+          borderRadius: AppRadius.pillAll,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: AppTypography.body.copyWith(color: colors.textSecondary),
+            ),
+            if (removable) ...[
+              const SizedBox(width: AppSpacing.s2),
+              GestureDetector(
+                onTap: onRemove,
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 14,
+                  color: colors.textTertiary,
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

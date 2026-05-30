@@ -27,8 +27,8 @@ class PlayBar extends ConsumerWidget {
       decoration: BoxDecoration(
         color: colors.bgBase,
         border: Border(
-            top: BorderSide(
-                color: colors.textPrimary.withValues(alpha: 0.06))),
+          top: BorderSide(color: colors.textPrimary.withValues(alpha: 0.06)),
+        ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
       child: Row(
@@ -59,17 +59,23 @@ class PlayBar extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(track?.title ?? '—',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.body.copyWith(
-                              color: colors.textPrimary,
-                              fontWeight: FontWeight.w600)),
-                      Text(track?.artist ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.caption
-                              .copyWith(color: colors.textSecondary)),
+                      Text(
+                        track?.title ?? '—',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.body.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        track?.artist ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.caption.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -80,8 +86,7 @@ class PlayBar extends ConsumerWidget {
                     state.liked
                         ? Icons.favorite_rounded
                         : Icons.favorite_border_rounded,
-                    color:
-                        state.liked ? colors.brand : colors.textSecondary,
+                    color: state.liked ? colors.brand : colors.textSecondary,
                   ),
                   onPressed: notifier.toggleLike,
                 ),
@@ -106,8 +111,9 @@ class PlayBar extends ConsumerWidget {
                       ),
                       const SizedBox(width: AppSpacing.s4),
                       _TransportIcon(
-                          icon: Icons.skip_previous_rounded,
-                          onTap: notifier.previous),
+                        icon: Icons.skip_previous_rounded,
+                        onTap: notifier.previous,
+                      ),
                       const SizedBox(width: AppSpacing.s4),
                       PlayButton(
                         isPlaying: state.isPlaying,
@@ -117,8 +123,9 @@ class PlayBar extends ConsumerWidget {
                       ),
                       const SizedBox(width: AppSpacing.s4),
                       _TransportIcon(
-                          icon: Icons.skip_next_rounded,
-                          onTap: notifier.next),
+                        icon: Icons.skip_next_rounded,
+                        onTap: notifier.next,
+                      ),
                       const SizedBox(width: AppSpacing.s4),
                       _TransportIcon(
                         icon: state.repeat == PlayRepeatMode.one
@@ -134,10 +141,13 @@ class PlayBar extends ConsumerWidget {
                     children: [
                       SizedBox(
                         width: 40,
-                        child: Text(Format.duration(state.position),
-                            textAlign: TextAlign.right,
-                            style: AppTypography.caption
-                                .copyWith(color: colors.textTertiary)),
+                        child: Text(
+                          Format.duration(state.position),
+                          textAlign: TextAlign.right,
+                          style: AppTypography.caption.copyWith(
+                            color: colors.textTertiary,
+                          ),
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.s2),
                       Expanded(
@@ -149,9 +159,12 @@ class PlayBar extends ConsumerWidget {
                       const SizedBox(width: AppSpacing.s2),
                       SizedBox(
                         width: 40,
-                        child: Text(Format.duration(state.duration),
-                            style: AppTypography.caption
-                                .copyWith(color: colors.textTertiary)),
+                        child: Text(
+                          Format.duration(state.duration),
+                          style: AppTypography.caption.copyWith(
+                            color: colors.textTertiary,
+                          ),
+                        ),
                       ),
                     ],
                   ),

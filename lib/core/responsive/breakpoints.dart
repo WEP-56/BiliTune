@@ -6,6 +6,5 @@ import '../theme/app_dimens.dart';
 class Breakpoints {
   const Breakpoints._();
 
-  static bool isDesktop(double width) =>
-      width >= AppLayout.desktopBreakpoint;
+  static bool isDesktop(double width) => width >= AppLayout.desktopBreakpoint;
 }

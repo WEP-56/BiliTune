@@ -75,9 +75,7 @@ class _ContentCardState extends State<ContentCard> {
                       child: AnimatedOpacity(
                         opacity: _hover ? 1 : 0,
                         duration: AppDuration.normal,
-                        child: PlayButton(
-                          onTap: widget.onPlay ?? () {},
-                        ),
+                        child: PlayButton(onTap: widget.onPlay ?? () {}),
                       ),
                     ),
                   ),
@@ -99,8 +97,9 @@ class _ContentCardState extends State<ContentCard> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: isCircle ? TextAlign.center : TextAlign.start,
-                  style: AppTypography.caption
-                      .copyWith(color: colors.textSecondary),
+                  style: AppTypography.caption.copyWith(
+                    color: colors.textSecondary,
+                  ),
                 ),
               ),
             ],

@@ -27,8 +27,7 @@ class CoverImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCircle = shape == CoverShape.circle;
-    final borderRadius =
-        isCircle ? null : BorderRadius.circular(radius);
+    final borderRadius = isCircle ? null : BorderRadius.circular(radius);
 
     Widget content = url == null
         ? _Placeholder(seed: gradientSeed, isCircle: isCircle)
@@ -58,8 +57,7 @@ class _Placeholder extends StatelessWidget {
   Widget build(BuildContext context) {
     final hue = (seed * 47) % 360;
     final c1 = HSLColor.fromAHSL(1, hue.toDouble(), 0.50, 0.42).toColor();
-    final c2 =
-        HSLColor.fromAHSL(1, (hue + 35) % 360, 0.55, 0.26).toColor();
+    final c2 = HSLColor.fromAHSL(1, (hue + 35) % 360, 0.55, 0.26).toColor();
 
     return DecoratedBox(
       decoration: BoxDecoration(

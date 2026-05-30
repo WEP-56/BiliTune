@@ -9,8 +9,6 @@ import '../../../core/theme/app_typography.dart';
 import '../../../data/mock/mock_data.dart';
 import '../../../state/providers.dart';
 
-/// Desktop left navigation rail (design doc §6.2). Collapsible to an icon-only
-/// 64px rail. Holds primary nav + the user's playlists + create/import actions.
 class Sidebar extends ConsumerWidget {
   const Sidebar({super.key, required this.navigationShell});
 
@@ -20,8 +18,15 @@ class Sidebar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final collapsed = ref.watch(sidebarCollapsedProvider);
-    final width =
-        collapsed ? AppLayout.sidebarCollapsedWidth : AppLayout.sidebarWidth;
+    final width = collapsed
+        ? AppLayout.sidebarCollapsedWidth
+        : AppLayout.sidebarWidth;
+    final library = ref.watch(libraryProvider);
+    final folders = library.folders.isEmpty
+        ? MockData.libraryFolders
+        : library.folders
+              .map((folder) => folder.toCardItem())
+              .toList(growable: false);
 
     return AnimatedContainer(
       duration: AppDuration.normal,
@@ -29,7 +34,9 @@ class Sidebar extends ConsumerWidget {
       width: width,
       color: colors.bgSidebar,
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s2, vertical: AppSpacing.s3),
+        horizontal: AppSpacing.s2,
+        vertical: AppSpacing.s3,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -49,22 +56,31 @@ class Sidebar extends ConsumerWidget {
             ),
           const Padding(
             padding: EdgeInsets.symmetric(
-                horizontal: AppSpacing.s2, vertical: AppSpacing.s3),
+              horizontal: AppSpacing.s2,
+              vertical: AppSpacing.s3,
+            ),
             child: Divider(height: 1),
           ),
           if (!collapsed)
             Padding(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.s2, 0, AppSpacing.s2, AppSpacing.s2),
-              child: Text('我的歌单',
-                  style: AppTypography.overline
-                      .copyWith(color: colors.textTertiary)),
+                AppSpacing.s2,
+                0,
+                AppSpacing.s2,
+                AppSpacing.s2,
+              ),
+              child: Text(
+                '我的歌单',
+                style: AppTypography.overline.copyWith(
+                  color: colors.textTertiary,
+                ),
+              ),
             ),
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                for (final folder in MockData.libraryFolders)
+                for (final folder in folders)
                   _PlaylistTile(
                     title: folder.title,
                     subtitle: folder.subtitle,
@@ -74,6 +90,16 @@ class Sidebar extends ConsumerWidget {
               ],
             ),
           ),
+          if (library.errorMessage != null && !collapsed)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.s2),
+              child: Text(
+                library.errorMessage!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.caption.copyWith(color: colors.error),
+              ),
+            ),
         ],
       ),
     );
@@ -91,22 +117,26 @@ class _Header extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
       child: Row(
-        mainAxisAlignment:
-            collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+        mainAxisAlignment: collapsed
+            ? MainAxisAlignment.center
+            : MainAxisAlignment.start,
         children: [
           Icon(Icons.graphic_eq_rounded, color: colors.brand, size: 26),
           if (!collapsed) ...[
             const SizedBox(width: AppSpacing.s2),
-            Text('BiliTune',
-                style: AppTypography.titleS.copyWith(
-                    color: colors.textPrimary, fontWeight: FontWeight.w700)),
+            Text(
+              'BiliTune',
+              style: AppTypography.titleS.copyWith(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const Spacer(),
           ],
           if (!collapsed)
             _IconBtn(
               icon: Icons.menu_open_rounded,
-              onTap: () =>
-                  ref.read(sidebarCollapsedProvider.notifier).toggle(),
+              onTap: () => ref.read(sidebarCollapsedProvider.notifier).toggle(),
             ),
         ],
       ),
@@ -152,7 +182,9 @@ class _NavTileState extends State<_NavTile> {
           duration: AppDuration.fast,
           margin: const EdgeInsets.symmetric(vertical: 2),
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s3, vertical: AppSpacing.s3),
+            horizontal: AppSpacing.s3,
+            vertical: AppSpacing.s3,
+          ),
           decoration: BoxDecoration(
             color: widget.selected
                 ? colors.bgActive
@@ -164,13 +196,20 @@ class _NavTileState extends State<_NavTile> {
                 ? MainAxisAlignment.center
                 : MainAxisAlignment.start,
             children: [
-              Icon(widget.selected ? widget.selectedIcon : widget.icon,
-                  color: fg, size: 22),
+              Icon(
+                widget.selected ? widget.selectedIcon : widget.icon,
+                color: fg,
+                size: 22,
+              ),
               if (!widget.collapsed) ...[
                 const SizedBox(width: AppSpacing.s3),
-                Text(widget.label,
-                    style: AppTypography.body.copyWith(
-                        color: fg, fontWeight: FontWeight.w600)),
+                Text(
+                  widget.label,
+                  style: AppTypography.body.copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ],
           ),
@@ -234,8 +273,11 @@ class _PlaylistTileState extends State<_PlaylistTile> {
                   colors: [c1, c2],
                 ),
               ),
-              child: Icon(Icons.queue_music_rounded,
-                  size: 18, color: colors.onBrand.withValues(alpha: 0.6)),
+              child: Icon(
+                Icons.queue_music_rounded,
+                size: 18,
+                color: colors.onBrand.withValues(alpha: 0.6),
+              ),
             ),
             if (!widget.collapsed) ...[
               const SizedBox(width: AppSpacing.s3),
@@ -244,16 +286,22 @@ class _PlaylistTileState extends State<_PlaylistTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(widget.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.body
-                            .copyWith(color: colors.textPrimary)),
-                    Text(widget.subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.caption
-                            .copyWith(color: colors.textSecondary)),
+                    Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.body.copyWith(
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      widget.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.caption.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),

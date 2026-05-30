@@ -23,8 +23,7 @@ class FullScreenPlayer extends ConsumerWidget {
     final notifier = ref.read(playbackProvider.notifier);
     final track = state.track;
     final hue = ((track?.gradientSeed ?? 0) * 47) % 360;
-    final topColor =
-        HSLColor.fromAHSL(1, hue.toDouble(), 0.45, 0.30).toColor();
+    final topColor = HSLColor.fromAHSL(1, hue.toDouble(), 0.45, 0.30).toColor();
 
     return GestureDetector(
       onVerticalDragEnd: (d) {
@@ -49,18 +48,26 @@ class FullScreenPlayer extends ConsumerWidget {
                 Row(
                   children: [
                     IconButton(
-                      icon: Icon(Icons.keyboard_arrow_down_rounded,
-                          color: colors.textPrimary, size: 30),
+                      icon: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: colors.textPrimary,
+                        size: 30,
+                      ),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const Spacer(),
-                    Text('正在播放',
-                        style: AppTypography.overline
-                            .copyWith(color: colors.textSecondary)),
+                    Text(
+                      '正在播放',
+                      style: AppTypography.overline.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
                     const Spacer(),
                     IconButton(
-                      icon: Icon(Icons.more_horiz_rounded,
-                          color: colors.textPrimary),
+                      icon: Icon(
+                        Icons.more_horiz_rounded,
+                        color: colors.textPrimary,
+                      ),
                       onPressed: () {},
                     ),
                   ],
@@ -84,17 +91,23 @@ class FullScreenPlayer extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(track?.title ?? '—',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.titleL
-                                  .copyWith(color: colors.textPrimary)),
+                          Text(
+                            track?.title ?? '—',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.titleL.copyWith(
+                              color: colors.textPrimary,
+                            ),
+                          ),
                           const SizedBox(height: AppSpacing.s1),
-                          Text(track?.artist ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.body
-                                  .copyWith(color: colors.textSecondary)),
+                          Text(
+                            track?.artist ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.body.copyWith(
+                              color: colors.textSecondary,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -104,8 +117,7 @@ class FullScreenPlayer extends ConsumerWidget {
                         state.liked
                             ? Icons.favorite_rounded
                             : Icons.favorite_border_rounded,
-                        color:
-                            state.liked ? colors.brand : colors.textPrimary,
+                        color: state.liked ? colors.brand : colors.textPrimary,
                       ),
                       onPressed: notifier.toggleLike,
                     ),
@@ -120,12 +132,18 @@ class FullScreenPlayer extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(Format.duration(state.position),
-                        style: AppTypography.caption
-                            .copyWith(color: colors.textTertiary)),
-                    Text(Format.duration(state.duration),
-                        style: AppTypography.caption
-                            .copyWith(color: colors.textTertiary)),
+                    Text(
+                      Format.duration(state.position),
+                      style: AppTypography.caption.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                    ),
+                    Text(
+                      Format.duration(state.duration),
+                      style: AppTypography.caption.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.s3),
@@ -135,16 +153,20 @@ class FullScreenPlayer extends ConsumerWidget {
                   children: [
                     IconButton(
                       iconSize: 26,
-                      icon: Icon(Icons.shuffle_rounded,
-                          color: state.shuffle
-                              ? colors.brand
-                              : colors.textSecondary),
+                      icon: Icon(
+                        Icons.shuffle_rounded,
+                        color: state.shuffle
+                            ? colors.brand
+                            : colors.textSecondary,
+                      ),
                       onPressed: notifier.toggleShuffle,
                     ),
                     IconButton(
                       iconSize: 40,
-                      icon: Icon(Icons.skip_previous_rounded,
-                          color: colors.textPrimary),
+                      icon: Icon(
+                        Icons.skip_previous_rounded,
+                        color: colors.textPrimary,
+                      ),
                       onPressed: notifier.previous,
                     ),
                     PlayButton(
@@ -154,8 +176,10 @@ class FullScreenPlayer extends ConsumerWidget {
                     ),
                     IconButton(
                       iconSize: 40,
-                      icon: Icon(Icons.skip_next_rounded,
-                          color: colors.textPrimary),
+                      icon: Icon(
+                        Icons.skip_next_rounded,
+                        color: colors.textPrimary,
+                      ),
                       onPressed: notifier.next,
                     ),
                     IconButton(
@@ -183,13 +207,19 @@ class FullScreenPlayer extends ConsumerWidget {
                   ),
                   child: Column(
                     children: [
-                      Text('月光下的歌声轻轻响起',
-                          style: AppTypography.titleS
-                              .copyWith(color: colors.textPrimary)),
+                      Text(
+                        '月光下的歌声轻轻响起',
+                        style: AppTypography.titleS.copyWith(
+                          color: colors.textPrimary,
+                        ),
+                      ),
                       const SizedBox(height: AppSpacing.s1),
-                      Text('你的旋律划过我心底',
-                          style: AppTypography.body
-                              .copyWith(color: colors.textSecondary)),
+                      Text(
+                        '你的旋律划过我心底',
+                        style: AppTypography.body.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -198,11 +228,12 @@ class FullScreenPlayer extends ConsumerWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    Icon(Icons.queue_music_rounded,
-                        color: colors.textSecondary),
+                    Icon(
+                      Icons.queue_music_rounded,
+                      color: colors.textSecondary,
+                    ),
                     Icon(Icons.lyrics_outlined, color: colors.textSecondary),
-                    Icon(Icons.download_outlined,
-                        color: colors.textSecondary),
+                    Icon(Icons.download_outlined, color: colors.textSecondary),
                     Icon(Icons.share_outlined, color: colors.textSecondary),
                   ],
                 ),

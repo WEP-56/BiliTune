@@ -25,8 +25,7 @@ class TopBar extends ConsumerWidget {
           if (collapsed)
             _CircleIcon(
               icon: Icons.menu_rounded,
-              onTap: () =>
-                  ref.read(sidebarCollapsedProvider.notifier).toggle(),
+              onTap: () => ref.read(sidebarCollapsedProvider.notifier).toggle(),
             ),
           if (collapsed) const SizedBox(width: AppSpacing.s2),
           _CircleIcon(icon: Icons.chevron_left_rounded, onTap: () {}),
@@ -51,8 +50,11 @@ class TopBar extends ConsumerWidget {
           CircleAvatar(
             radius: 16,
             backgroundColor: colors.bgActive,
-            child: Icon(Icons.person_rounded,
-                size: 18, color: colors.textSecondary),
+            child: Icon(
+              Icons.person_rounded,
+              size: 18,
+              color: colors.textSecondary,
+            ),
           ),
         ],
       ),

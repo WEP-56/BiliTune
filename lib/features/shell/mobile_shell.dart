@@ -53,8 +53,8 @@ class _BottomTabs extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.bgSidebar,
         border: Border(
-            top: BorderSide(
-                color: colors.textPrimary.withValues(alpha: 0.06))),
+          top: BorderSide(color: colors.textPrimary.withValues(alpha: 0.06)),
+        ),
       ),
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
       child: SizedBox(

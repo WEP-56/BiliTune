@@ -47,8 +47,9 @@ class _BiliProgressBarState extends State<BiliProgressBar> {
     final colors = context.colors;
     final active = _hover || _dragValue != null;
     final showThumb = active && !widget.alwaysActive;
-    final fillColor =
-        (active || widget.alwaysActive) ? colors.brand : colors.textPrimary;
+    final fillColor = (active || widget.alwaysActive)
+        ? colors.brand
+        : colors.textPrimary;
     final trackHeight = active && !widget.alwaysActive ? 6.0 : 4.0;
 
     return MouseRegion(

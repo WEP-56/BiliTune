@@ -40,8 +40,7 @@ class _TrackRowState extends State<TrackRow> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final titleColor =
-        widget.isCurrent ? colors.brand : colors.textPrimary;
+    final titleColor = widget.isCurrent ? colors.brand : colors.textPrimary;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -52,7 +51,9 @@ class _TrackRowState extends State<TrackRow> {
         child: AnimatedContainer(
           duration: AppDuration.fast,
           padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s4, vertical: AppSpacing.s2),
+            horizontal: AppSpacing.s4,
+            vertical: AppSpacing.s2,
+          ),
           decoration: BoxDecoration(
             color: _hover ? colors.bgHighlight : Colors.transparent,
             borderRadius: AppRadius.smAll,
@@ -73,8 +74,9 @@ class _TrackRowState extends State<TrackRow> {
                         )
                       : Text(
                           '${widget.index + 1}',
-                          style: AppTypography.body
-                              .copyWith(color: colors.textTertiary),
+                          style: AppTypography.body.copyWith(
+                            color: colors.textTertiary,
+                          ),
                         ),
                 ),
               ),
@@ -108,8 +110,9 @@ class _TrackRowState extends State<TrackRow> {
                       widget.track.artist,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTypography.caption
-                          .copyWith(color: colors.textSecondary),
+                      style: AppTypography.caption.copyWith(
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -151,8 +154,9 @@ class _TrackRowState extends State<TrackRow> {
                 child: Text(
                   Format.duration(widget.track.duration),
                   textAlign: TextAlign.right,
-                  style: AppTypography.caption
-                      .copyWith(color: colors.textTertiary),
+                  style: AppTypography.caption.copyWith(
+                    color: colors.textTertiary,
+                  ),
                 ),
               ),
             ],

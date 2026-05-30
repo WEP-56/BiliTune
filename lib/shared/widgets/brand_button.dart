@@ -47,7 +47,8 @@ class _BrandButtonState extends State<BrandButton> {
         bg = Colors.transparent;
         fg = colors.textPrimary;
         border = Border.all(
-            color: _hover ? colors.textPrimary : colors.textSecondary);
+          color: _hover ? colors.textPrimary : colors.textSecondary,
+        );
       case BiliButtonVariant.ghost:
         bg = Colors.transparent;
         fg = _hover ? colors.textPrimary : colors.textSecondary;
@@ -63,7 +64,9 @@ class _BrandButtonState extends State<BrandButton> {
         child: AnimatedContainer(
           duration: AppDuration.normal,
           padding: EdgeInsets.symmetric(
-            horizontal: isPrimary || isSecondary ? AppSpacing.s8 : AppSpacing.s3,
+            horizontal: isPrimary || isSecondary
+                ? AppSpacing.s8
+                : AppSpacing.s3,
             vertical: AppSpacing.s3,
           ),
           decoration: BoxDecoration(
@@ -80,8 +83,10 @@ class _BrandButtonState extends State<BrandButton> {
               ],
               Text(
                 widget.label,
-                style: AppTypography.body
-                    .copyWith(color: fg, fontWeight: FontWeight.w600),
+                style: AppTypography.body.copyWith(
+                  color: fg,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),

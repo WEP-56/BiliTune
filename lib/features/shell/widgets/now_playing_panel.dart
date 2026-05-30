@@ -33,12 +33,17 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final track = ref.watch(playbackProvider).track;
+    final playback = ref.watch(playbackProvider);
+    final track = playback.track;
+    final downloadQueue = ref.read(downloadQueueProvider.notifier);
 
     return Container(
       width: AppLayout.nowPlayingWidth,
       margin: const EdgeInsets.only(
-          right: AppSpacing.s4, top: AppSpacing.s2, bottom: AppSpacing.s2),
+        right: AppSpacing.s4,
+        top: AppSpacing.s2,
+        bottom: AppSpacing.s2,
+      ),
       decoration: BoxDecoration(
         color: colors.bgElevated,
         borderRadius: AppRadius.mdAll,
@@ -50,12 +55,19 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
           // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(
-                AppSpacing.s4, AppSpacing.s3, AppSpacing.s2, AppSpacing.s2),
+              AppSpacing.s4,
+              AppSpacing.s3,
+              AppSpacing.s2,
+              AppSpacing.s2,
+            ),
             child: Row(
               children: [
-                Text('正在播放',
-                    style: AppTypography.titleS
-                        .copyWith(color: colors.textPrimary)),
+                Text(
+                  '正在播放',
+                  style: AppTypography.titleS.copyWith(
+                    color: colors.textPrimary,
+                  ),
+                ),
                 const Spacer(),
                 IconButton(
                   iconSize: 20,
@@ -86,39 +98,54 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(track?.title ?? '—',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.titleS
-                              .copyWith(color: colors.textPrimary)),
-                      Text(track?.artist ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.caption
-                              .copyWith(color: colors.textSecondary)),
+                      Text(
+                        track?.title ?? '—',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.titleS.copyWith(
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        track?.artist ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.caption.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-                Icon(Icons.download_outlined,
-                    color: colors.textSecondary, size: 22),
+                IconButton(
+                  iconSize: 22,
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    Icons.download_outlined,
+                    color: colors.textSecondary,
+                  ),
+                  onPressed: track == null
+                      ? null
+                      : () => downloadQueue.enqueueTrack(track),
+                ),
                 const SizedBox(width: AppSpacing.s4),
-                Icon(Icons.share_outlined,
-                    color: colors.textSecondary, size: 22),
+                Icon(
+                  Icons.share_outlined,
+                  color: colors.textSecondary,
+                  size: 22,
+                ),
               ],
             ),
           ),
-          _TabBar(
-            index: _tab,
-            onChanged: (i) => setState(() => _tab = i),
-          ),
+          _TabBar(index: _tab, onChanged: (i) => setState(() => _tab = i)),
           const Divider(height: 1),
-          Expanded(child: _tabBody(track, colors)),
+          Expanded(child: _tabBody(playback, colors)),
         ],
       ),
     );
   }
 
-  Widget _tabBody(Track? track, BiliColors colors) {
+  Widget _tabBody(PlaybackState playback, BiliColors colors) {
     switch (_tab) {
       case 0:
         return ListView.builder(
@@ -132,69 +159,103 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
                 _mockLyrics[i],
                 style: (current ? AppTypography.titleS : AppTypography.body)
                     .copyWith(
-                  color: current ? colors.brand : colors.textSecondary,
-                  fontWeight: current ? FontWeight.w700 : FontWeight.w400,
-                ),
+                      color: current ? colors.brand : colors.textSecondary,
+                      fontWeight: current ? FontWeight.w700 : FontWeight.w400,
+                    ),
               ),
             );
           },
         );
       case 1:
+        final queue = playback.queue.isEmpty ? MockData.tracks : playback.queue;
         return ListView(
           padding: const EdgeInsets.all(AppSpacing.s3),
           children: [
-            for (final t in MockData.tracks.take(6))
+            for (final t in queue.take(6))
               ListTile(
                 dense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s2,
+                ),
                 leading: SizedBox(
                   width: 36,
                   height: 36,
                   child: CoverImage(gradientSeed: t.gradientSeed),
                 ),
-                title: Text(t.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.body
-                        .copyWith(color: colors.textPrimary)),
-                subtitle: Text(t.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.caption
-                        .copyWith(color: colors.textSecondary)),
+                title: Text(
+                  t.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.body.copyWith(color: colors.textPrimary),
+                ),
+                subtitle: Text(
+                  t.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.caption.copyWith(
+                    color: colors.textSecondary,
+                  ),
+                ),
               ),
           ],
         );
       default:
+        final related = playback.queue.isEmpty
+            ? MockData.shelves.first.items
+            : playback.queue
+                  .map(
+                    (track) => CardItem(
+                      id: track.id,
+                      title: track.title,
+                      subtitle: track.artist,
+                      gradientSeed: track.gradientSeed,
+                      coverUrl: track.coverUrl,
+                      type: track.type,
+                      duration: track.duration,
+                      playCount: track.playCount,
+                      bvid: track.bvid,
+                      aid: track.aid,
+                      cid: track.cid,
+                      audioId: track.audioId,
+                      artist: track.artist,
+                    ),
+                  )
+                  .toList(growable: false);
         return ListView(
           padding: const EdgeInsets.all(AppSpacing.s4),
           children: [
-            for (final c in MockData.shelves.first.items.take(4))
+            for (final c in related.take(4))
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.s3),
                 child: Row(
                   children: [
                     SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: CoverImage(gradientSeed: c.gradientSeed)),
+                      width: 48,
+                      height: 48,
+                      child: CoverImage(gradientSeed: c.gradientSeed),
+                    ),
                     const SizedBox(width: AppSpacing.s3),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(c.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.body
-                                  .copyWith(color: colors.textPrimary)),
-                          Text(c.subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.caption
-                                  .copyWith(color: colors.textSecondary)),
+                          Text(
+                            c.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.body.copyWith(
+                              color: colors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            c.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.caption.copyWith(
+                              color: colors.textSecondary,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -220,7 +281,9 @@ class _TabBar extends StatelessWidget {
     final colors = context.colors;
     return Padding(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.s4, vertical: AppSpacing.s2),
+        horizontal: AppSpacing.s4,
+        vertical: AppSpacing.s2,
+      ),
       child: Row(
         children: [
           for (int i = 0; i < _labels.length; i++)
@@ -236,8 +299,9 @@ class _TabBar extends StatelessWidget {
                       color: i == index
                           ? colors.textPrimary
                           : colors.textTertiary,
-                      fontWeight:
-                          i == index ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight: i == index
+                          ? FontWeight.w700
+                          : FontWeight.w400,
                     ),
                   ),
                 ),

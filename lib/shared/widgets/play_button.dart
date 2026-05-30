@@ -56,9 +56,7 @@ class _PlayButtonState extends State<PlayButton> {
                   : null,
             ),
             child: Icon(
-              widget.isPlaying
-                  ? Icons.pause_rounded
-                  : Icons.play_arrow_rounded,
+              widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
               color: colors.onBrand,
               size: widget.size * 0.56,
             ),

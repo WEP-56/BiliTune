@@ -1,46 +1,90 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
-import '../../core/utils/format.dart';
-import '../../data/mock/mock_data.dart';
+import '../../data/models/models.dart';
+import '../../shared/widgets/brand_button.dart';
 import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/section_header.dart';
+import '../../state/providers.dart';
 
-/// Download manager (design doc §6.3 / §14): storage summary + task list. Mock
-/// data only; the real download engine lands in M6.
-class DownloadsPage extends StatelessWidget {
+class DownloadsPage extends ConsumerWidget {
   const DownloadsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final width = MediaQuery.sizeOf(context).width;
-    final pad =
-        width >= AppLayout.desktopBreakpoint ? AppSpacing.s6 : AppSpacing.s4;
-    final items = MockData.downloads;
-    final doneCount = items.where((e) => e.done).length;
+    final pad = width >= AppLayout.desktopBreakpoint
+        ? AppSpacing.s6
+        : AppSpacing.s4;
+
+    final playback = ref.watch(playbackProvider);
+    final downloadState = ref.watch(downloadQueueProvider);
+    final downloadNotifier = ref.read(downloadQueueProvider.notifier);
 
     return ListView(
       padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, AppSpacing.s12),
       children: [
-        Text('下载管理',
-            style: AppTypography.titleL.copyWith(color: colors.textPrimary)),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '下载管理',
+                style: AppTypography.titleL.copyWith(color: colors.textPrimary),
+              ),
+            ),
+            if (playback.track != null) ...[
+              BrandButton(
+                label: '添加当前播放',
+                icon: Icons.add_rounded,
+                onTap: () => downloadNotifier.enqueueTrack(playback.track!),
+              ),
+              const SizedBox(width: AppSpacing.s3),
+            ],
+            IconButton(
+              tooltip: '清空任务',
+              onPressed: downloadState.tasks.isEmpty
+                  ? null
+                  : () => downloadNotifier.clear(),
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                color: colors.textSecondary,
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.s6),
-        const _StorageCard(usedFraction: 0.42),
+        _StorageCard(usedFraction: downloadState.storageProgress),
         const SizedBox(height: AppSpacing.s8),
-        SectionHeader(title: '下载任务（$doneCount/${items.length} 已完成）'),
-        const SizedBox(height: AppSpacing.s4),
-        for (final item in items)
-          _DownloadRow(
-            title: item.track.title,
-            artist: item.track.artist,
-            seed: item.track.gradientSeed,
-            duration: item.track.duration,
-            progress: item.progress,
-            done: item.done,
+        if (downloadState.isLoading) ...[
+          const LinearProgressIndicator(minHeight: 2),
+          const SizedBox(height: AppSpacing.s4),
+        ],
+        if (downloadState.errorMessage != null) ...[
+          Text(
+            downloadState.errorMessage!,
+            style: AppTypography.caption.copyWith(color: colors.error),
           ),
+          const SizedBox(height: AppSpacing.s4),
+        ],
+        SectionHeader(
+          title:
+              '下载任务 (${downloadState.completedCount}/${downloadState.tasks.length})',
+        ),
+        const SizedBox(height: AppSpacing.s4),
+        if (downloadState.tasks.isEmpty)
+          _EmptyState(title: '还没有下载任务', subtitle: '可先从当前播放内容生成一个任务，或后续接入下载按钮。')
+        else
+          for (final task in downloadState.tasks)
+            _DownloadRow(
+              task: task,
+              onPause: () => downloadNotifier.pauseTask(task.id),
+              onResume: () => downloadNotifier.resumeTask(task.id),
+              onDelete: () => downloadNotifier.removeTask(task.id),
+            ),
       ],
     );
   }
@@ -66,31 +110,32 @@ class _StorageCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('存储空间',
-                  style: AppTypography.titleS
-                      .copyWith(color: colors.textPrimary)),
-              Text('26.9 GB / 64 GB',
-                  style: AppTypography.caption
-                      .copyWith(color: colors.textSecondary)),
+              Text(
+                '存储空间',
+                style: AppTypography.titleS.copyWith(color: colors.textPrimary),
+              ),
+              Text(
+                '${(usedFraction * 100).round()}%',
+                style: AppTypography.caption.copyWith(
+                  color: colors.textSecondary,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.s3),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
-              value: usedFraction,
+              value: usedFraction.clamp(0.0, 1.0),
               minHeight: 8,
               backgroundColor: colors.bgActive,
               valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
             ),
           ),
           const SizedBox(height: AppSpacing.s3),
-          Row(
-            children: [
-              _Legend(color: colors.brand, label: '已下载 26.9 GB'),
-              const SizedBox(width: AppSpacing.s4),
-              _Legend(color: colors.bgActive, label: '可用 37.1 GB'),
-            ],
+          Text(
+            '任务会先进入本地队列，下载引擎接入后再执行。',
+            style: AppTypography.caption.copyWith(color: colors.textSecondary),
           ),
         ],
       ),
@@ -98,105 +143,188 @@ class _StorageCard extends StatelessWidget {
   }
 }
 
-class _Legend extends StatelessWidget {
-  const _Legend({required this.color, required this.label});
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.title, required this.subtitle});
 
-  final Color color;
-  final String label;
+  final String title;
+  final String subtitle;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: AppSpacing.s2),
-        Text(label,
-            style: AppTypography.caption
-                .copyWith(color: context.colors.textSecondary)),
-      ],
+    final colors = context.colors;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.s6),
+      decoration: BoxDecoration(
+        color: colors.bgElevated,
+        borderRadius: AppRadius.mdAll,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: AppTypography.titleS.copyWith(color: colors.textPrimary),
+          ),
+          const SizedBox(height: AppSpacing.s2),
+          Text(
+            subtitle,
+            style: AppTypography.body.copyWith(color: colors.textSecondary),
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _DownloadRow extends StatelessWidget {
   const _DownloadRow({
-    required this.title,
-    required this.artist,
-    required this.seed,
-    required this.duration,
-    required this.progress,
-    required this.done,
+    required this.task,
+    required this.onPause,
+    required this.onResume,
+    required this.onDelete,
   });
 
-  final String title;
-  final String artist;
-  final int seed;
-  final Duration duration;
-  final double progress;
-  final bool done;
+  final DownloadTask task;
+  final VoidCallback onPause;
+  final VoidCallback onResume;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final quality = _qualityLabel(task);
+    final statusLabel = switch (task.status) {
+      DownloadTaskStatus.queued => '等待中',
+      DownloadTaskStatus.downloading => '下载中',
+      DownloadTaskStatus.paused => '已暂停',
+      DownloadTaskStatus.completed => '已完成',
+      DownloadTaskStatus.failed => '失败',
+      DownloadTaskStatus.cancelled => '已取消',
+    };
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
-      child: Row(
-        children: [
-          SizedBox(width: 44, height: 44, child: CoverImage(gradientSeed: seed)),
-          const SizedBox(width: AppSpacing.s3),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.s3),
+        decoration: BoxDecoration(
+          color: colors.bgElevated,
+          borderRadius: AppRadius.mdAll,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 48,
+              height: 48,
+              child: CoverImage(
+                url: task.coverUrl,
+                gradientSeed: task.gradientSeed,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.body.copyWith(
-                        color: colors.textPrimary,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                if (done)
-                  Text('$artist · ${Format.duration(duration)} · FLAC',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.caption
-                          .copyWith(color: colors.textSecondary))
-                else
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${task.artist} · $statusLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.caption.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.s2),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(2),
                     child: LinearProgressIndicator(
-                      value: progress,
+                      value: task.progress,
                       minHeight: 4,
                       backgroundColor: colors.bgActive,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(colors.accent),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        task.status == DownloadTaskStatus.failed
+                            ? colors.error
+                            : colors.accent,
+                      ),
                     ),
                   ),
-              ],
+                  if (quality.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.s2),
+                    Text(
+                      quality,
+                      style: AppTypography.caption.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.s4),
-          if (done)
-            Icon(Icons.check_circle_rounded, color: colors.success, size: 22)
-          else
-            Row(
+            const SizedBox(width: AppSpacing.s4),
+            Column(
               children: [
-                Text('${(progress * 100).round()}%',
-                    style: AppTypography.caption
-                        .copyWith(color: colors.textSecondary)),
-                const SizedBox(width: AppSpacing.s2),
-                Icon(Icons.pause_circle_outline_rounded,
-                    color: colors.textSecondary, size: 22),
+                Text(
+                  '${(task.progress * 100).round()}%',
+                  style: AppTypography.caption.copyWith(
+                    color: colors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s1),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: task.status == DownloadTaskStatus.paused
+                          ? onResume
+                          : onPause,
+                      iconSize: 20,
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        task.status == DownloadTaskStatus.paused
+                            ? Icons.play_arrow_rounded
+                            : Icons.pause_rounded,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: onDelete,
+                      iconSize: 20,
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        Icons.delete_outline_rounded,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  String _qualityLabel(DownloadTask task) {
+    if (task.outputFileType == 'video') {
+      return task.videoResolution == null
+          ? ''
+          : '${task.videoResolution}${task.videoFrameRate == null ? '' : '@${task.videoFrameRate}'}';
+    }
+    if (task.audioCodecs == 'flac') return 'FLAC';
+    if (task.audioCodecs?.contains('ec-3') ?? false) return 'Dolby';
+    if (task.audioBandwidth != null) {
+      return '${(task.audioBandwidth! / 1000).round()} kbps';
+    }
+    return task.outputFileType == 'audio' ? '音频任务' : '';
   }
 }

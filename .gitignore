@@ -1,0 +1,85 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# ───────────────────────────────────────────────────────────
+# BiliTune 仓库特定规则
+# ───────────────────────────────────────────────────────────
+
+# 构建/覆盖率产物(递归,覆盖 example 子项目 + windows 等)
+**/build/
+**/dist/
+**/coverage/
+**/.turbo/
+
+# 本地配置与密钥(android/.gitignore 已覆盖 local.properties,这里再兜底)
+**/local.properties
+**/key.properties
+*.keystore
+*.jks
+**/.env
+**/.env.*
+!**/.env.example
+
+# 参考子项目:Node / Electron / React Native (example/biu, example/BBPlayer)
+**/node_modules/
+**/.pnpm-store/
+**/.expo/
+**/Pods/
+**/.gradle/
+*.tsbuildinfo
+
+# 参考子项目:Python (example/bilibili-api)
+**/__pycache__/
+**/.venv/
+**/venv/
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# 操作系统/编辑器杂项
+Thumbs.db
+desktop.ini

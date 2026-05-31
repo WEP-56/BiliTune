@@ -137,6 +137,18 @@ class BiliApiService {
     return _checkedData(response);
   }
 
+  Future<Map<String, dynamic>> subtitleJson(String url) async {
+    final response = await _dio.getUri(
+      Uri.parse(_normalizeExternalUrl(url)),
+      options: Options(
+        sendTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        headers: const <String, String>{'Referer': 'https://www.bilibili.com'},
+      ),
+    );
+    return _json(response);
+  }
+
   Future<List<Map<String, dynamic>>> lrclibLyrics({
     required String trackName,
     String? artistName,
@@ -163,6 +175,27 @@ class BiliApiService {
           .toList(growable: false);
     }
     return const <Map<String, dynamic>>[];
+  }
+
+  Future<Map<String, dynamic>> audioSongInfo(int songId) async {
+    final response = await _get(
+      BiliApiEndpoints.audioSongInfo,
+      query: <String, dynamic>{'sid': songId},
+    );
+    return _checkedData(response);
+  }
+
+  Future<String> rawText(String url) async {
+    final response = await _dio.getUri<String>(
+      Uri.parse(_normalizeExternalUrl(url)),
+      options: Options(
+        responseType: ResponseType.plain,
+        sendTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+        headers: const <String, String>{'Referer': 'https://www.bilibili.com'},
+      ),
+    );
+    return response.data ?? '';
   }
 
   Future<Map<String, dynamic>> videoPlayUrl({
@@ -454,5 +487,13 @@ class BiliApiService {
 
   Map<String, String> _stringQuery(Map<String, dynamic> params) {
     return params.map((key, value) => MapEntry(key, value.toString()));
+  }
+
+  String _normalizeExternalUrl(String url) {
+    if (url.startsWith('//')) return 'https:$url';
+    if (url.startsWith('http://')) {
+      return url.replaceFirst('http://', 'https://');
+    }
+    return url;
   }
 }

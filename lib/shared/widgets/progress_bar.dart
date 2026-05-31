@@ -10,12 +10,14 @@ class BiliProgressBar extends StatefulWidget {
   const BiliProgressBar({
     super.key,
     required this.value,
+    this.bufferValue,
     this.onChanged,
     this.onChangeEnd,
     this.alwaysActive = false,
   });
 
   final double value; // 0..1
+  final double? bufferValue;
   final ValueChanged<double>? onChanged;
   final ValueChanged<double>? onChangeEnd;
 
@@ -51,6 +53,7 @@ class _BiliProgressBarState extends State<BiliProgressBar> {
         ? colors.brand
         : colors.textPrimary;
     final trackHeight = active && !widget.alwaysActive ? 6.0 : 4.0;
+    final bufferValue = (widget.bufferValue ?? widget.value).clamp(0.0, 1.0);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -83,6 +86,18 @@ class _BiliProgressBarState extends State<BiliProgressBar> {
                     decoration: BoxDecoration(
                       color: colors.bgActive,
                       borderRadius: BorderRadius.circular(trackHeight / 2),
+                    ),
+                  ),
+                  // Buffered region
+                  FractionallySizedBox(
+                    widthFactor: bufferValue,
+                    child: AnimatedContainer(
+                      duration: AppDuration.fast,
+                      height: trackHeight,
+                      decoration: BoxDecoration(
+                        color: colors.textPrimary.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(trackHeight / 2),
+                      ),
                     ),
                   ),
                   // Fill

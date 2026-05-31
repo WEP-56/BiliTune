@@ -30,6 +30,7 @@ class BiliApiEndpoints {
   static final videoView = api('/x/web-interface/view');
   static final playerV2 = api('/x/player/wbi/v2');
   static final videoPlayUrl = api('/x/player/wbi/playurl');
+  static final audioSongInfo = api('/audio/music-service-c/web/song/info');
   static final audioStreamUrl = api('/audio/music-service-c/url');
   static final favoriteFolders = api('/x/v3/fav/folder/created/list-all');
   static final favoriteFolderInfo = api('/x/v3/fav/folder/info');

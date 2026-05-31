@@ -49,8 +49,10 @@ class SystemMediaControls extends audio.BaseAudioHandler {
     required Track? track,
     required List<Track> queue,
     required bool isPlaying,
+    required bool isBuffering,
     required Duration position,
     required Duration duration,
+    required Duration bufferedPosition,
     required bool shuffle,
     required String repeatMode,
     String? errorMessage,
@@ -74,12 +76,14 @@ class SystemMediaControls extends audio.BaseAudioHandler {
         ],
         androidCompactActionIndices: const [0, 1, 2],
         systemActions: const {audio.MediaAction.seek},
-        processingState: errorMessage == null
-            ? audio.AudioProcessingState.ready
-            : audio.AudioProcessingState.error,
+        processingState: errorMessage != null
+            ? audio.AudioProcessingState.error
+            : isBuffering
+            ? audio.AudioProcessingState.buffering
+            : audio.AudioProcessingState.ready,
         playing: isPlaying,
         updatePosition: position,
-        bufferedPosition: duration,
+        bufferedPosition: bufferedPosition,
         speed: 1,
         queueIndex: queueIndex < 0 ? null : queueIndex,
         shuffleMode: shuffle

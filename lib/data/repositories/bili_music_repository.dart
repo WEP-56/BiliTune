@@ -398,22 +398,32 @@ class BiliMusicRepository {
   }
 
   Future<List<LyricLine>> trackLyrics(Track track) async {
-    final metadata = await _lyricMetadata(track);
-    final title = metadata.title.trim();
-    if (title.isEmpty) return const <LyricLine>[];
-
-    final items = await _api.lrclibLyrics(
-      trackName: title,
-      artistName: metadata.artist,
-      durationSeconds: metadata.duration.inSeconds > 0
-          ? metadata.duration.inSeconds
-          : null,
-    );
-    if (items.isEmpty && metadata.artist != null) {
-      final fallbackItems = await _api.lrclibLyrics(trackName: title);
-      return _lyricsFromLrclib(fallbackItems);
+    if (track.type == ContentType.audio && track.audioId != null) {
+      final audioLyrics = await _audioAreaLyrics(track.audioId!);
+      if (audioLyrics.isNotEmpty) return audioLyrics;
     }
-    return _lyricsFromLrclib(items);
+
+    final context = await _lyricVideoContext(track);
+    if (context != null) {
+      final biliLyrics = await _videoSubtitleLyrics(context.playerData);
+      if (biliLyrics.isNotEmpty) return biliLyrics;
+    }
+
+    final metadata = await _lyricMetadata(track, context: context);
+    final candidates = _lyricQueries(metadata, track);
+    for (final candidate in candidates) {
+      final items = await _api.lrclibLyrics(
+        trackName: candidate.title,
+        artistName: candidate.artist,
+        durationSeconds: candidate.duration.inSeconds > 0
+            ? candidate.duration.inSeconds
+            : null,
+      );
+      final parsed = _lyricsFromLrclib(items);
+      if (parsed.isNotEmpty) return parsed;
+    }
+
+    return const <LyricLine>[];
   }
 
   Future<List<Track>> relatedTracks(Track track, {int limit = 12}) async {
@@ -502,7 +512,7 @@ class BiliMusicRepository {
     );
   }
 
-  Future<_LyricMetadata> _lyricMetadata(Track track) async {
+  Future<_LyricVideoContext?> _lyricVideoContext(Track track) async {
     var candidate = track;
     if ((candidate.bvid != null || candidate.aid != null) &&
         candidate.cid == null) {
@@ -514,26 +524,80 @@ class BiliMusicRepository {
     final bvid = candidate.bvid;
     final aid = candidate.aid;
     final cid = candidate.cid;
-    if ((bvid != null || aid != null) && cid != null) {
+    if ((bvid == null && aid == null) || cid == null) {
+      return null;
+    }
+
+    try {
+      final data = await _api.playerV2(bvid: bvid, aid: aid, cid: cid);
+      return _LyricVideoContext(track: candidate, playerData: data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<LyricLine>> _videoSubtitleLyrics(
+    Map<String, dynamic> playerData,
+  ) async {
+    final subtitleBlock = _asMap(playerData['subtitle']);
+    final subtitles = _extractList(subtitleBlock['subtitles']);
+    if (subtitles.isEmpty) return const <LyricLine>[];
+
+    final preferred = subtitles.map(_asMap).toList(growable: false)
+      ..sort((a, b) => _subtitleRank(a).compareTo(_subtitleRank(b)));
+
+    for (final item in preferred) {
+      final subtitleUrl =
+          item['subtitle_url']?.toString() ??
+          item['subtitle_url_v2']?.toString();
+      if (subtitleUrl == null || subtitleUrl.isEmpty) continue;
       try {
-        final data = await _api.playerV2(bvid: bvid, aid: aid, cid: cid);
-        final bgmInfo = _asMap(data['bgm_info'] ?? data['bgminfo']);
-        final bgmTitle =
-            bgmInfo['title']?.toString() ??
-            bgmInfo['name']?.toString() ??
-            bgmInfo['song_name']?.toString();
-        final bgmArtist =
-            bgmInfo['author']?.toString() ??
-            bgmInfo['artist']?.toString() ??
-            bgmInfo['singer']?.toString();
-        if (bgmTitle != null && bgmTitle.trim().isNotEmpty) {
-          return _LyricMetadata(
-            title: _searchableTitle(bgmTitle),
-            artist: _cleanArtist(bgmArtist ?? candidate.artist),
-            duration: candidate.duration,
-          );
-        }
+        final data = await _api.subtitleJson(subtitleUrl);
+        final lines = _lyricsFromBiliSubtitle(_extractList(data['body']));
+        if (lines.isNotEmpty) return lines;
       } catch (_) {}
+    }
+
+    return const <LyricLine>[];
+  }
+
+  Future<List<LyricLine>> _audioAreaLyrics(int audioId) async {
+    try {
+      final info = await _api.audioSongInfo(audioId);
+      final lyricUrl = info['lyric']?.toString();
+      if (lyricUrl == null || lyricUrl.isEmpty) return const <LyricLine>[];
+      final raw = await _api.rawText(lyricUrl);
+      final parsed = _parseLrc(raw);
+      if (parsed.isNotEmpty) return parsed;
+      return _parsePlainLyrics(raw);
+    } catch (_) {
+      return const <LyricLine>[];
+    }
+  }
+
+  Future<_LyricMetadata> _lyricMetadata(
+    Track track, {
+    _LyricVideoContext? context,
+  }) async {
+    final candidate = context?.track ?? track;
+    final playerData = context?.playerData;
+    if (playerData != null) {
+      final bgmInfo = _asMap(playerData['bgm_info'] ?? playerData['bgminfo']);
+      final bgmTitle =
+          bgmInfo['title']?.toString() ??
+          bgmInfo['name']?.toString() ??
+          bgmInfo['song_name']?.toString();
+      final bgmArtist =
+          bgmInfo['author']?.toString() ??
+          bgmInfo['artist']?.toString() ??
+          bgmInfo['singer']?.toString();
+      if (bgmTitle != null && bgmTitle.trim().isNotEmpty) {
+        return _LyricMetadata(
+          title: _searchableTitle(bgmTitle),
+          artist: _cleanArtist(bgmArtist ?? candidate.artist),
+          duration: candidate.duration,
+        );
+      }
     }
 
     return _LyricMetadata(
@@ -926,6 +990,67 @@ class BiliMusicRepository {
         .toList(growable: false);
   }
 
+  List<LyricLine> _parsePlainLyrics(String raw) {
+    return raw
+        .split(RegExp(r'\r?\n'))
+        .map((line) => _cleanLyricText(line))
+        .where((line) => line.isNotEmpty)
+        .map((line) => LyricLine(time: Duration.zero, text: line))
+        .toList(growable: false);
+  }
+
+  List<LyricLine> _lyricsFromBiliSubtitle(List<Object?> items) {
+    if (items.isEmpty) return const <LyricLine>[];
+    final lines = <LyricLine>[];
+    for (final item in items) {
+      final map = _asMap(item);
+      final text = _cleanLyricText(map['content']?.toString() ?? '');
+      if (text.isEmpty) continue;
+      final from = _asDouble(map['from']) ?? 0;
+      lines.add(
+        LyricLine(
+          time: Duration(milliseconds: (from * 1000).round()),
+          text: text,
+        ),
+      );
+    }
+    lines.sort((a, b) => a.time.compareTo(b.time));
+    return lines;
+  }
+
+  List<_LyricQuery> _lyricQueries(_LyricMetadata metadata, Track track) {
+    final queries = <_LyricQuery>[];
+    final titleCandidates =
+        <String>[
+              metadata.title,
+              _searchableTitle(track.title),
+              _fallbackSearchTitle(track.title),
+            ]
+            .map((title) => title.trim())
+            .where((title) => title.isNotEmpty)
+            .toList(growable: false);
+
+    final artistCandidates = <String?>[
+      metadata.artist,
+      _cleanArtist(track.artist),
+      null,
+    ];
+
+    for (final title in titleCandidates) {
+      for (final artist in artistCandidates) {
+        final query = _LyricQuery(
+          title: title,
+          artist: artist,
+          duration: metadata.duration,
+        );
+        if (!queries.contains(query)) {
+          queries.add(query);
+        }
+      }
+    }
+    return queries;
+  }
+
   List<LyricLine> _parseLrc(String raw) {
     final lines = <LyricLine>[];
     final pattern = RegExp(r'\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]');
@@ -959,6 +1084,26 @@ class BiliMusicRepository {
     return lines;
   }
 
+  int _subtitleRank(Map<String, dynamic> item) {
+    final lan = item['lan']?.toString().toLowerCase() ?? '';
+    final lanDoc = item['lan_doc']?.toString().toLowerCase() ?? '';
+    final aiStatus = _asInt(item['ai_status']) ?? 0;
+    if (lan.contains('zh') || lanDoc.contains('中文')) return 0;
+    if (aiStatus > 0) return 1;
+    return 2;
+  }
+
+  String _fallbackSearchTitle(String value) {
+    return _stripHtml(value)
+        .replaceAll(RegExp(r'\[[^\]]*\]'), ' ')
+        .replaceAll(RegExp(r'【[^】]*】'), ' ')
+        .replaceAll(RegExp(r'\([^)]*\)'), ' ')
+        .replaceAll(RegExp(r'（[^）]*）'), ' ')
+        .replaceAll(RegExp(r'\s*[-–—|/／·•~].*$'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
   String _searchableTitle(String value) {
     return _stripHtml(value)
         .replaceAll(RegExp(r'【[^】]*】'), ' ')
@@ -973,6 +1118,15 @@ class BiliMusicRepository {
         .replaceAll(RegExp(r'[,/&、].*'), '')
         .trim();
     return cleaned == null || cleaned.isEmpty ? null : cleaned;
+  }
+
+  String _cleanLyricText(String value) {
+    return value
+        .replaceAll(RegExp(r'^[♪♫♬♩\s]+'), '')
+        .replaceAll(RegExp(r'[♪♫♬♩\s]+$'), '')
+        .replaceAll(RegExp(r'\uFEFF'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   String? _normalizeImageUrl(String? url) {
@@ -1032,6 +1186,11 @@ class BiliMusicRepository {
       return number == null ? null : (number * 10000).round();
     }
     return int.tryParse(text.replaceAll(RegExp(r'[^0-9]'), ''));
+  }
+
+  double? _asDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
   }
 
   Map<String, dynamic> _asMap(Object? value) {
@@ -1132,4 +1291,34 @@ class _LyricMetadata {
   final String title;
   final String? artist;
   final Duration duration;
+}
+
+class _LyricVideoContext {
+  const _LyricVideoContext({required this.track, required this.playerData});
+
+  final Track track;
+  final Map<String, dynamic> playerData;
+}
+
+class _LyricQuery {
+  const _LyricQuery({
+    required this.title,
+    required this.artist,
+    required this.duration,
+  });
+
+  final String title;
+  final String? artist;
+  final Duration duration;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _LyricQuery &&
+        other.title == title &&
+        other.artist == artist &&
+        other.duration == duration;
+  }
+
+  @override
+  int get hashCode => Object.hash(title, artist, duration);
 }

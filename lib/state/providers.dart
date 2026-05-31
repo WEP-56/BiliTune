@@ -80,9 +80,31 @@ final biliMusicRepositoryProvider = Provider<BiliMusicRepository>(
 bool get _skipNetworkBootstrap =>
     Platform.environment['FLUTTER_TEST'] == 'true';
 
+const _playerBufferSize = 128 * 1024 * 1024;
+const _streamingMpvProperties = <String, String>{
+  'cache': 'yes',
+  'cache-on-disk': 'yes',
+  'demuxer-max-bytes': '$_playerBufferSize',
+  'demuxer-max-back-bytes': '$_playerBufferSize',
+  'demuxer-readahead-secs': '60',
+  'cache-pause': 'yes',
+  'cache-pause-wait': '3',
+  'cache-pause-initial': 'yes',
+};
+const _biliPlaybackHeaders = <String, String>{
+  'User-Agent': biliUserAgent,
+  'Referer': biliReferer,
+  'Origin': 'https://www.bilibili.com',
+};
+
 final mediaPlayerProvider = Provider<mk.Player>((ref) {
   mk.MediaKit.ensureInitialized();
-  final player = mk.Player();
+  final player = mk.Player(
+    configuration: const mk.PlayerConfiguration(
+      title: 'BiliTune',
+      bufferSize: _playerBufferSize,
+    ),
+  );
   ref.onDispose(() => unawaited(player.dispose()));
   return player;
 });
@@ -1277,6 +1299,9 @@ class PlaybackState {
     this.source,
     this.isPlaying = false,
     this.position = Duration.zero,
+    this.bufferAhead = Duration.zero,
+    this.isBuffering = false,
+    this.bufferingPercentage = 0,
     this.mediaDuration,
     this.shuffle = false,
     this.repeat = PlayRepeatMode.off,
@@ -1290,6 +1315,9 @@ class PlaybackState {
   final BiliPlaybackSource? source;
   final bool isPlaying;
   final Duration position;
+  final Duration bufferAhead;
+  final bool isBuffering;
+  final double bufferingPercentage;
   final Duration? mediaDuration;
   final bool shuffle;
   final PlayRepeatMode repeat;
@@ -1305,12 +1333,24 @@ class PlaybackState {
     return (position.inMilliseconds / total).clamp(0.0, 1.0);
   }
 
+  double get bufferProgress {
+    final total = duration.inMilliseconds;
+    if (total == 0) return 0;
+    final buffered = position + bufferAhead;
+    return (buffered.inMilliseconds / total).clamp(0.0, 1.0);
+  }
+
+  Duration get bufferedPosition => position + bufferAhead;
+
   PlaybackState copyWith({
     Object? track = _unset,
     List<Track>? queue,
     Object? source = _unset,
     bool? isPlaying,
     Duration? position,
+    Duration? bufferAhead,
+    bool? isBuffering,
+    double? bufferingPercentage,
     Object? mediaDuration = _unset,
     bool? shuffle,
     PlayRepeatMode? repeat,
@@ -1326,6 +1366,9 @@ class PlaybackState {
           : source as BiliPlaybackSource?,
       isPlaying: isPlaying ?? this.isPlaying,
       position: position ?? this.position,
+      bufferAhead: bufferAhead ?? this.bufferAhead,
+      isBuffering: isBuffering ?? this.isBuffering,
+      bufferingPercentage: bufferingPercentage ?? this.bufferingPercentage,
       mediaDuration: identical(mediaDuration, _unset)
           ? this.mediaDuration
           : mediaDuration as Duration?,
@@ -1342,9 +1385,11 @@ class PlaybackState {
 
 class PlaybackNotifier extends Notifier<PlaybackState> {
   Timer? _mockTimer;
+  Timer? _bufferingFallbackTimer;
   final _subscriptions = <StreamSubscription<dynamic>>[];
   final _random = Random();
   mk.Player? _player;
+  Future<void>? _playerConfiguration;
 
   @override
   PlaybackState build() {
@@ -1359,6 +1404,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     _mockTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickMock());
     ref.onDispose(() {
       _mockTimer?.cancel();
+      _bufferingFallbackTimer?.cancel();
       for (final subscription in _subscriptions) {
         unawaited(subscription.cancel());
       }
@@ -1380,6 +1426,28 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     _player = player;
 
     _subscriptions.addAll([
+      player.stream.buffering.listen((buffering) {
+        state = state.copyWith(isBuffering: buffering);
+        if (buffering) {
+          _bufferingFallbackTimer?.cancel();
+          final source = state.source;
+          if (source != null && source.backupUrls.isNotEmpty) {
+            _bufferingFallbackTimer = Timer(
+              const Duration(seconds: 8),
+              () => _tryBackupSource(),
+            );
+          }
+        } else {
+          _bufferingFallbackTimer?.cancel();
+          _bufferingFallbackTimer = null;
+        }
+      }),
+      player.stream.buffer.listen((bufferAhead) {
+        state = state.copyWith(bufferAhead: bufferAhead);
+      }),
+      player.stream.bufferingPercentage.listen((bufferingPercentage) {
+        state = state.copyWith(bufferingPercentage: bufferingPercentage);
+      }),
       player.stream.position.listen((position) {
         if (state.source != null) {
           state = state.copyWith(position: position);
@@ -1398,6 +1466,16 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       player.stream.volume.listen((volume) {
         state = state.copyWith(volume: (volume / 100).clamp(0.0, 1.0));
       }),
+      player.stream.error.listen((message) {
+        if (message.isEmpty) return;
+        state = state.copyWith(
+          isPlaying: false,
+          isBuffering: false,
+          errorMessage: message,
+        );
+        _bufferingFallbackTimer?.cancel();
+        _bufferingFallbackTimer = null;
+      }),
       player.stream.completed.listen((completed) {
         if (!completed) return;
         if (state.repeat == PlayRepeatMode.one) {
@@ -1408,7 +1486,94 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
         }
       }),
     ]);
+
+    _playerConfiguration ??= _configurePlayer(player);
+    unawaited(_playerConfiguration);
     return player;
+  }
+
+  Future<void> _configurePlayer(mk.Player player) async {
+    final platform = player.platform;
+    if (platform is! mk.NativePlayer) return;
+    for (final entry in _streamingMpvProperties.entries) {
+      try {
+        await platform.setProperty(entry.key, entry.value);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _tryBackupSource() async {
+    final source = state.source;
+    if (source == null || source.backupUrls.isEmpty) return;
+    final player = _player;
+    if (player == null) return;
+
+    final current = source.url;
+    final resumeAt = state.position;
+    final candidate = source.backupUrls.firstWhere(
+      (url) => url != current,
+      orElse: () => source.backupUrls.first,
+    );
+    if (candidate == current) return;
+
+    try {
+      await player.open(
+        mk.Media(candidate, httpHeaders: _biliPlaybackHeaders),
+        play: true,
+      );
+      if (resumeAt > Duration.zero) {
+        await player.seek(resumeAt);
+      }
+      state = state.copyWith(
+        source: _sourceWithUrl(source, candidate),
+        isBuffering: false,
+      );
+    } catch (error) {
+      debugPrint('BiliTune backup stream retry failed: $error');
+    }
+  }
+
+  Future<BiliPlaybackSource> _openPlaybackSource(
+    BiliPlaybackSource source,
+  ) async {
+    final player = _ensurePlayer();
+    await _playerConfiguration;
+
+    final urls = <String>[
+      source.url,
+      ...source.backupUrls,
+    ].where((url) => url.isNotEmpty).toSet();
+    Object? lastError;
+    for (final url in urls) {
+      try {
+        await player.open(
+          mk.Media(url, httpHeaders: _biliPlaybackHeaders),
+          play: true,
+        );
+        return _sourceWithUrl(source, url);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError ?? StateError('No playable stream URL returned.');
+  }
+
+  BiliPlaybackSource _sourceWithUrl(BiliPlaybackSource source, String url) {
+    final backupUrls = <String>[source.url, ...source.backupUrls]
+        .where((item) => item.isNotEmpty && item != url)
+        .toSet()
+        .toList(growable: false);
+    return BiliPlaybackSource(
+      url: url,
+      backupUrls: backupUrls,
+      qualityId: source.qualityId,
+      label: source.label,
+      codecs: source.codecs,
+      bandwidth: source.bandwidth,
+      mimeType: source.mimeType,
+      expiresAt: source.expiresAt,
+      isLossless: source.isLossless,
+    );
   }
 
   void _tickMock() {
@@ -1432,6 +1597,9 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       queue: nextQueue.isEmpty ? <Track>[track] : nextQueue,
       source: null,
       position: Duration.zero,
+      bufferAhead: Duration.zero,
+      isBuffering: false,
+      bufferingPercentage: 0,
       mediaDuration: null,
       isPlaying: true,
       liked: false,
@@ -1447,18 +1615,8 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       final source = await ref
           .read(biliMusicRepositoryProvider)
           .resolvePlaybackSource(track);
-      state = state.copyWith(source: source, errorMessage: null);
-      await _ensurePlayer().open(
-        mk.Media(
-          source.url,
-          httpHeaders: const <String, String>{
-            'User-Agent': biliUserAgent,
-            'Referer': biliReferer,
-            'Origin': 'https://www.bilibili.com',
-          },
-        ),
-        play: true,
-      );
+      final openedSource = await _openPlaybackSource(source);
+      state = state.copyWith(source: openedSource, errorMessage: null);
     } catch (error) {
       state = state.copyWith(isPlaying: false, errorMessage: error.toString());
     }
@@ -1543,8 +1701,10 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       track: playback.track,
       queue: playback.queue,
       isPlaying: playback.isPlaying,
+      isBuffering: playback.isBuffering,
       position: playback.position,
       duration: playback.duration,
+      bufferedPosition: playback.bufferedPosition,
       shuffle: playback.shuffle,
       repeatMode: playback.repeat.name,
       errorMessage: playback.errorMessage,

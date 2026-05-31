@@ -153,6 +153,7 @@ class PlayBar extends ConsumerWidget {
                       Expanded(
                         child: BiliProgressBar(
                           value: state.progress,
+                          bufferValue: state.bufferProgress,
                           onChangeEnd: notifier.seekFraction,
                         ),
                       ),

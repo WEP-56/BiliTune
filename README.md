@@ -32,15 +32,45 @@
   </tr>
 </table>
 
-- 在静态网页 [预览](https://wep-56.github.io/BiliTune/) 桌面端与移动端设计
+- 在静态网页 [预览](https://wep-56.github.io/BiliTune/) 桌面端与移动端
 
 ## Getting Started
 ### 非开发者
-前往[release](https://github.com/WEP-56/BiliTune/releases)下载对应设备的安装包
+前往 [Release](https://github.com/WEP-56/BiliTune/releases) 下载对应设备的安装包。
+
+- Windows：下载 `BiliTune-*-setup.exe`，按安装向导安装。
+- Android：下载 `BiliTune-*-release.apk`，允许从浏览器或文件管理器安装应用后直接安装。
+- 首次使用：进入设置页登录 B 站账号，应用会同步收藏夹作为歌单使用；未登录时也可以使用搜索、最近播放和本地下载相关功能。
+
 ### 开发者
+本项目基于 Flutter，当前主要目标平台为 Windows 和 Android。
+
+```bash
+git clone https://github.com/WEP-56/BiliTune.git
+cd BiliTune
+flutter pub get
+flutter run -d windows
+```
+
+Android 调试请先连接设备或启动模拟器：
+
+```bash
+flutter devices
+flutter run -d <device-id>
+```
+
+常用检查与构建命令：
+
+```bash
+flutter analyze
+flutter test
+flutter build windows --release
+flutter build apk --release
+```
+
+Release 包由 GitHub Actions 在推送匹配 `pubspec.yaml` 版本的 tag 时自动构建，例如 `version: 0.0.8+2` 可使用 `v0.0.8` 或 `v0.0.8+2`。
 
 ## 致谢
 参考了以下优秀项目
 
 api来自：[Nemo2011/bilibili-api](https://github.com/Nemo2011/bilibili-api)
-

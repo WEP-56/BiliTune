@@ -14,8 +14,8 @@ Future<void> showCreateFavoriteFolderDialog(BuildContext context) {
   );
 }
 
-Future<void> showAddToFavoriteDialog(BuildContext context, Track track) {
-  return showDialog<void>(
+Future<bool?> showAddToFavoriteDialog(BuildContext context, Track track) {
+  return showDialog<bool>(
     context: context,
     builder: (_) => _AddToFavoriteDialog(track: track),
   );
@@ -154,7 +154,7 @@ class _CreateFavoriteFolderDialogState
         );
     if (!mounted) return;
     if (ref.read(libraryProvider).errorMessage == null) {
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
     }
   }
 }

@@ -7,6 +7,7 @@ import '../../core/theme/app_typography.dart';
 import '../../core/utils/format.dart';
 import '../../state/providers.dart';
 import '../../shared/widgets/cover_image.dart';
+import '../../shared/widgets/favorite_folder_dialogs.dart';
 import '../../shared/widgets/play_button.dart';
 import '../../shared/widgets/progress_bar.dart';
 
@@ -119,7 +120,15 @@ class FullScreenPlayer extends ConsumerWidget {
                             : Icons.favorite_border_rounded,
                         color: state.liked ? colors.brand : colors.textPrimary,
                       ),
-                      onPressed: notifier.toggleLike,
+                      onPressed: track == null
+                          ? null
+                          : () async {
+                              final added = await showAddToFavoriteDialog(
+                                context,
+                                track,
+                              );
+                              if (added == true) notifier.setLiked(true);
+                            },
                     ),
                   ],
                 ),

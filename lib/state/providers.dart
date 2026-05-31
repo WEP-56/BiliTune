@@ -1649,7 +1649,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     final queue = state.queue.isEmpty ? MockData.tracks : state.queue;
     final currentIndex = queue.indexWhere((item) => item.id == state.track?.id);
     final nextIndex = state.shuffle
-        ? _random.nextInt(queue.length)
+        ? _randomQueueIndex(queue.length, currentIndex)
         : (currentIndex + 1) % queue.length;
     if (state.repeat == PlayRepeatMode.off &&
         currentIndex == queue.length - 1) {
@@ -1670,6 +1670,15 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     unawaited(playTrack(queue[previousIndex], queue: queue));
   }
 
+  int _randomQueueIndex(int length, int currentIndex) {
+    if (length <= 1) return 0;
+    var nextIndex = _random.nextInt(length);
+    if (nextIndex == currentIndex) {
+      nextIndex = (nextIndex + 1) % length;
+    }
+    return nextIndex;
+  }
+
   void toggleShuffle() => state = state.copyWith(shuffle: !state.shuffle);
 
   void cycleRepeat() {
@@ -1688,6 +1697,8 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   }
 
   void toggleLike() => state = state.copyWith(liked: !state.liked);
+
+  void setLiked(bool value) => state = state.copyWith(liked: value);
 
   bool _hasResolvableSource(Track track) {
     return track.sourceUrl != null ||

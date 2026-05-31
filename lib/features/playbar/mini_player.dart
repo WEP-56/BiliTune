@@ -6,6 +6,7 @@ import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
 import '../../state/providers.dart';
 import '../../shared/widgets/cover_image.dart';
+import '../../shared/widgets/favorite_folder_dialogs.dart';
 
 /// Mobile floating mini player (design doc §7.3): a 2px brand progress line on
 /// top, compact track info, and quick controls. Tapping opens the full-screen
@@ -93,7 +94,15 @@ class MiniPlayer extends ConsumerWidget {
                             ? colors.brand
                             : colors.textSecondary,
                       ),
-                      onPressed: notifier.toggleLike,
+                      onPressed: track == null
+                          ? null
+                          : () async {
+                              final added = await showAddToFavoriteDialog(
+                                context,
+                                track,
+                              );
+                              if (added == true) notifier.setLiked(true);
+                            },
                     ),
                     IconButton(
                       iconSize: 26,

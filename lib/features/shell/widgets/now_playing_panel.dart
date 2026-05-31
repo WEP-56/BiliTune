@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -158,16 +158,31 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
   }
 }
 
-class _LyricsPane extends StatelessWidget {
+class _LyricsPane extends StatefulWidget {
   const _LyricsPane({required this.lyrics, required this.position});
 
   final AsyncValue<List<LyricLine>> lyrics;
   final Duration position;
 
   @override
+  State<_LyricsPane> createState() => _LyricsPaneState();
+}
+
+class _LyricsPaneState extends State<_LyricsPane> {
+  final _controller = ScrollController();
+  final _lineKeys = <GlobalKey>[];
+  int? _lastCenteredIndex;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return lyrics.when(
+    return widget.lyrics.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, _) =>
           const _PanelMessage(title: '未找到歌词', subtitle: '当前曲目暂时没有匹配到可用歌词。'),
@@ -178,27 +193,78 @@ class _LyricsPane extends StatelessWidget {
             subtitle: '会优先用 B 站关联歌曲信息匹配 LRCLIB 歌词。',
           );
         }
-        final currentIndex = _currentLyricIndex(lines, position);
-        return ListView.builder(
-          padding: const EdgeInsets.all(AppSpacing.s4),
-          itemCount: lines.length,
-          itemBuilder: (_, i) {
-            final current = i == currentIndex;
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
-              child: Text(
-                lines[i].text,
-                style: (current ? AppTypography.titleS : AppTypography.body)
-                    .copyWith(
-                      color: current ? colors.brand : colors.textSecondary,
-                      fontWeight: current ? FontWeight.w700 : FontWeight.w400,
-                    ),
+        _syncLineKeys(lines.length);
+        final currentIndex = _currentLyricIndex(lines, widget.position);
+        _scheduleCenterCurrentLine(currentIndex);
+        final timed = currentIndex >= 0;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final verticalPadding = timed
+                ? constraints.maxHeight * 0.38
+                : AppSpacing.s4.toDouble();
+            return ListView.builder(
+              controller: _controller,
+              padding: EdgeInsets.symmetric(
+                horizontal: AppSpacing.s4,
+                vertical: verticalPadding,
               ),
+              itemCount: lines.length,
+              itemBuilder: (_, i) {
+                final current = i == currentIndex;
+                return Padding(
+                  key: _lineKeys[i],
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
+                  child: AnimatedDefaultTextStyle(
+                    duration: AppDuration.fast,
+                    curve: Curves.easeOut,
+                    style: (current ? AppTypography.titleS : AppTypography.body)
+                        .copyWith(
+                          color: current ? colors.brand : colors.textSecondary,
+                          fontWeight: current
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                        ),
+                    child: Text(
+                      lines[i].text,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                );
+              },
             );
           },
         );
       },
     );
+  }
+
+  void _syncLineKeys(int length) {
+    if (_lineKeys.length == length) return;
+    if (_lineKeys.length > length) {
+      _lineKeys.removeRange(length, _lineKeys.length);
+      return;
+    }
+    _lineKeys.addAll(
+      List<GlobalKey>.generate(length - _lineKeys.length, (_) => GlobalKey()),
+    );
+  }
+
+  void _scheduleCenterCurrentLine(int index) {
+    if (index < 0 || _lastCenteredIndex == index) return;
+    _lastCenteredIndex = index;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || index >= _lineKeys.length) return;
+      final context = _lineKeys[index].currentContext;
+      if (context == null) return;
+      Scrollable.ensureVisible(
+        context,
+        alignment: 0.45,
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   int _currentLyricIndex(List<LyricLine> lines, Duration position) {

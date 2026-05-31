@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -24,6 +26,9 @@ class DownloadsPage extends ConsumerWidget {
     final playback = ref.watch(playbackProvider);
     final downloadState = ref.watch(downloadQueueProvider);
     final downloadNotifier = ref.read(downloadQueueProvider.notifier);
+    final playbackNotifier = ref.read(playbackProvider.notifier);
+    final completedTasks = downloadState.completedTasks;
+    final downloadedTracks = downloadState.downloadedTracks;
 
     return ListView(
       padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, AppSpacing.s12),
@@ -57,8 +62,6 @@ class DownloadsPage extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.s6),
-        _StorageCard(usedFraction: downloadState.storageProgress),
-        const SizedBox(height: AppSpacing.s8),
         if (downloadState.isLoading) ...[
           const LinearProgressIndicator(minHeight: 2),
           const SizedBox(height: AppSpacing.s4),
@@ -76,7 +79,10 @@ class DownloadsPage extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.s4),
         if (downloadState.tasks.isEmpty)
-          _EmptyState(title: '还没有下载任务', subtitle: '播放任意搜索结果后，可把当前播放内容加入下载队列。')
+          const _EmptyState(
+            title: '还没有下载任务',
+            subtitle: '播放任意搜索结果后，可把当前播放内容加入下载队列。',
+          )
         else
           for (final task in downloadState.tasks)
             _DownloadRow(
@@ -84,62 +90,65 @@ class DownloadsPage extends ConsumerWidget {
               onPause: () => downloadNotifier.pauseTask(task.id),
               onResume: () => downloadNotifier.resumeTask(task.id),
               onDelete: () => downloadNotifier.removeTask(task.id),
+              onOpenFolder: () => _openInFolder(context, task.savePath),
+            ),
+        const SizedBox(height: AppSpacing.s8),
+        SectionHeader(title: '我的下载 (${completedTasks.length})'),
+        const SizedBox(height: AppSpacing.s4),
+        if (completedTasks.isEmpty)
+          const _EmptyState(
+            title: '还没有已下载歌曲',
+            subtitle: '下载完成后会显示在这里，也会出现在“我的下载”固定歌单。',
+          )
+        else
+          for (int i = 0; i < completedTasks.length; i++)
+            _DownloadedTrackRow(
+              task: completedTasks[i],
+              track: downloadedTracks[i],
+              isCurrent: playback.track?.id == downloadedTracks[i].id,
+              isPlaying:
+                  playback.isPlaying &&
+                  playback.track?.id == downloadedTracks[i].id,
+              onPlay: () => playbackNotifier.playTrack(
+                downloadedTracks[i],
+                queue: downloadedTracks,
+              ),
+              onOpenFolder: () =>
+                  _openInFolder(context, completedTasks[i].savePath),
+              onDelete: () => downloadNotifier.removeTask(completedTasks[i].id),
             ),
       ],
     );
   }
-}
 
-class _StorageCard extends StatelessWidget {
-  const _StorageCard({required this.usedFraction});
-
-  final double usedFraction;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.s5),
-      decoration: BoxDecoration(
-        color: colors.bgElevated,
-        borderRadius: AppRadius.mdAll,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '存储空间',
-                style: AppTypography.titleS.copyWith(color: colors.textPrimary),
-              ),
-              Text(
-                '${(usedFraction * 100).round()}%',
-                style: AppTypography.caption.copyWith(
-                  color: colors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.s3),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: usedFraction.clamp(0.0, 1.0),
-              minHeight: 8,
-              backgroundColor: colors.bgActive,
-              valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s3),
-          Text(
-            '任务会保存到系统下载目录的 BiliTune 文件夹，当前先下载可播放音频流。',
-            style: AppTypography.caption.copyWith(color: colors.textSecondary),
-          ),
-        ],
-      ),
-    );
+  Future<void> _openInFolder(BuildContext context, String? savePath) async {
+    if (savePath == null || savePath.isEmpty) return;
+    try {
+      if (Platform.isWindows) {
+        await Process.start('explorer.exe', ['/select,$savePath']);
+        return;
+      }
+      final directory = File(savePath).parent.path;
+      if (Platform.isMacOS) {
+        await Process.start('open', [directory]);
+        return;
+      }
+      if (Platform.isLinux) {
+        await Process.start('xdg-open', [directory]);
+        return;
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('当前平台暂不支持打开文件夹')));
+      }
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('无法打开文件夹：$error')));
+      }
+    }
   }
 }
 
@@ -182,12 +191,14 @@ class _DownloadRow extends StatelessWidget {
     required this.onPause,
     required this.onResume,
     required this.onDelete,
+    required this.onOpenFolder,
   });
 
   final DownloadTask task;
   final VoidCallback onPause;
   final VoidCallback onResume;
   final VoidCallback onDelete;
+  final VoidCallback onOpenFolder;
 
   @override
   Widget build(BuildContext context) {
@@ -286,6 +297,11 @@ class _DownloadRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
+                      tooltip: task.status == DownloadTaskStatus.failed
+                          ? '重试'
+                          : task.status == DownloadTaskStatus.paused
+                          ? '继续'
+                          : '暂停',
                       onPressed: !canControl
                           ? null
                           : (task.status == DownloadTaskStatus.paused ||
@@ -304,6 +320,17 @@ class _DownloadRow extends StatelessWidget {
                       ),
                     ),
                     IconButton(
+                      tooltip: '在文件夹中显示',
+                      onPressed: task.savePath == null ? null : onOpenFolder,
+                      iconSize: 20,
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        Icons.folder_open_rounded,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '删除任务',
                       onPressed: onDelete,
                       iconSize: 20,
                       visualDensity: VisualDensity.compact,
@@ -334,5 +361,110 @@ class _DownloadRow extends StatelessWidget {
       return '${(task.audioBandwidth! / 1000).round()} kbps';
     }
     return task.outputFileType == 'audio' ? '音频任务' : '';
+  }
+}
+
+class _DownloadedTrackRow extends StatelessWidget {
+  const _DownloadedTrackRow({
+    required this.task,
+    required this.track,
+    required this.isCurrent,
+    required this.isPlaying,
+    required this.onPlay,
+    required this.onOpenFolder,
+    required this.onDelete,
+  });
+
+  final DownloadTask task;
+  final Track track;
+  final bool isCurrent;
+  final bool isPlaying;
+  final VoidCallback onPlay;
+  final VoidCallback onOpenFolder;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.s3),
+        decoration: BoxDecoration(
+          color: isCurrent ? colors.bgActive : colors.bgElevated,
+          borderRadius: AppRadius.mdAll,
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 48,
+              height: 48,
+              child: CoverImage(
+                url: task.coverUrl,
+                gradientSeed: task.gradientSeed,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    task.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.body.copyWith(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${task.artist} · ${_sizeLabel(task.downloadedBytes)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.caption.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s3),
+            IconButton(
+              tooltip: isPlaying ? '正在播放' : '播放',
+              onPressed: onPlay,
+              icon: Icon(
+                isPlaying ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
+                color: isCurrent ? colors.brand : colors.textSecondary,
+              ),
+            ),
+            IconButton(
+              tooltip: '在文件夹中显示',
+              onPressed: onOpenFolder,
+              icon: Icon(
+                Icons.folder_open_rounded,
+                color: colors.textSecondary,
+              ),
+            ),
+            IconButton(
+              tooltip: '删除记录',
+              onPressed: onDelete,
+              icon: Icon(
+                Icons.delete_outline_rounded,
+                color: colors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _sizeLabel(int bytes) {
+    if (bytes <= 0) return '本地文件';
+    final mb = bytes / 1024 / 1024;
+    if (mb >= 1) return '${mb.toStringAsFixed(1)} MB';
+    return '${(bytes / 1024).round()} KB';
   }
 }

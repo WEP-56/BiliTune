@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BiliTune — B站音乐播放器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --brand: #FB7299;
+    --brand-light: #FF8DB1;
+    --brand-dark: #D85A80;
+    --accent: #00AEEC;
+    --bg-base: #0E0E11;
+    --bg-sidebar: #070709;
+    --bg-elevated: #16161D;
+    --bg-surface: #1F1F26;
+    --bg-highlight: #2A2A35;
+    --bg-active: #32323F;
+    --text-primary: #FFFFFF;
+    --text-secondary: #A2A2B6;
+    --text-tertiary: #6C6C7C;
+    --success: #1ED760;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: #08080A;
+    color: var(--text-primary);
+    font-family: 'Inter', 'Noto Sans SC', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ─── HERO ─── */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px 60px;
+    overflow: hidden;
+  }
+
+  .hero-bg {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(251,114,153,0.18) 0%, transparent 70%),
+                radial-gradient(ellipse 40% 40% at 80% 60%, rgba(0,174,236,0.10) 0%, transparent 60%),
+                #08080A;
+    z-index: 0;
+  }
+
+  .hero-content { position: relative; z-index: 1; text-align: center; max-width: 680px; }
+
+  .logo-row {
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    margin-bottom: 28px;
+  }
+  .logo-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px;
+  }
+  .logo-text {
+    font-size: 32px; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(90deg, #fff 30%, var(--brand) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+
+  .hero h1 {
+    font-size: clamp(36px, 6vw, 64px);
+    font-weight: 800; line-height: 1.1; letter-spacing: -1.5px;
+    margin-bottom: 20px;
+  }
+  .hero h1 span { color: var(--brand); }
+
+  .hero p {
+    font-size: 18px; color: var(--text-secondary); line-height: 1.7;
+    margin-bottom: 36px; max-width: 520px; margin-left: auto; margin-right: auto;
+  }
+
+  .badge-row {
+    display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+    margin-bottom: 40px;
+  }
+  .badge {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg-elevated); border: 1px solid var(--bg-highlight);
+    border-radius: 20px; padding: 6px 14px;
+    font-size: 13px; color: var(--text-secondary); font-weight: 500;
+  }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); flex-shrink: 0; }
+  .badge .dot.blue { background: var(--accent); }
+  .badge .dot.green { background: var(--success); }
+
+  .cta-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .cta-primary {
+    background: var(--brand); color: #fff;
+    border: none; border-radius: 24px;
+    padding: 14px 32px; font-size: 15px; font-weight: 700;
+    cursor: pointer; text-decoration: none;
+    transition: background 0.2s, transform 0.15s;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .cta-primary:hover { background: var(--brand-light); transform: translateY(-1px); }
+  .cta-secondary {
+    background: transparent; color: var(--text-primary);
+    border: 1px solid var(--bg-highlight); border-radius: 24px;
+    padding: 14px 32px; font-size: 15px; font-weight: 600;
+    cursor: pointer; text-decoration: none;
+    transition: border-color 0.2s, background 0.2s;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .cta-secondary:hover { border-color: var(--text-secondary); background: var(--bg-elevated); }
+
+  /* ─── DEVICES SECTION ─── */
+  .devices-section {
+    padding: 0 24px 100px;
+    display: flex; flex-direction: column; align-items: center;
+    position: relative;
+  }
+
+  .section-label {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.1em;
+    color: var(--brand); text-transform: uppercase; margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: clamp(28px, 4vw, 44px); font-weight: 800;
+    letter-spacing: -1px; text-align: center; margin-bottom: 14px;
+  }
+  .section-sub {
+    font-size: 16px; color: var(--text-secondary);
+    text-align: center; max-width: 480px; line-height: 1.6; margin-bottom: 60px;
+  }
+
+  .devices-wrapper {
+    display: flex; align-items: flex-start; justify-content: center;
+    gap: 40px; max-width: 1400px; width: 100%;
+    flex-wrap: wrap;
+  }
+
+  /* ─── DESKTOP MOCKUP ─── */
+  .desktop-frame {
+    flex: 1; min-width: 0; max-width: 960px; width: 100%;
+    background: #18181C;
+    border-radius: 12px;
+    border: 1.5px solid #2A2A32;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.7);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+
+  .desktop-titlebar {
+    height: 40px; background: #0A0A0D;
+    display: flex; align-items: center; padding: 0 16px; gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    user-select: none;
+  }
+  .titlebar-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .td-red { background: #FF5F56; }
+  .td-yellow { background: #FFBD2E; }
+  .td-green { background: #27C93F; }
+  .titlebar-center { flex: 1; text-align: center; font-size: 12px; color: var(--text-tertiary); font-weight: 500; }
+  .titlebar-right-btns { display: flex; gap: 14px; margin-left: auto; color: var(--text-secondary); font-size: 13px; }
+
+  .desktop-app {
+    display: flex; background: var(--bg-base); height: 580px; position: relative; overflow: hidden;
+  }
+
+  /* Sidebar */
+  .app-sidebar {
+    width: 210px; flex-shrink: 0; background: var(--bg-sidebar);
+    display: flex; flex-direction: column; padding: 16px 10px;
+    border-right: 1px solid rgba(255,255,255,0.02);
+  }
+  .sidebar-brand {
+    display: flex; align-items: center; gap: 8px; padding: 0 10px 20px;
+    color: var(--brand); font-weight: 800; font-size: 18px;
+  }
+  .nav-group { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar-label {
+    font-size: 11px; font-weight: 600; color: var(--text-tertiary);
+    padding: 16px 10px 6px; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    border-radius: 8px; cursor: pointer; font-size: 13.5px; font-weight: 500;
+    color: var(--text-secondary); transition: all 0.2s;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+  .nav-item.active { background: var(--bg-highlight); color: var(--text-primary); font-weight: 600; }
+  
+  .playlist-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 8px; cursor: pointer; transition: background 0.2s;
+  }
+  .playlist-item:hover { background: rgba(255,255,255,0.03); }
+  .playlist-item.active { background: var(--bg-highlight); }
+  .playlist-box {
+    width: 32px; height: 32px; border-radius: 6px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; color: #fff;
+  }
+  .pb-blue { background: #2D5B94; }
+  .pb-orange { background: #D27C3A; }
+  .pb-green { background: #3B8455; }
+  .pb-olive { background: #5F743D; }
+  .playlist-meta { display: flex; flex-direction: column; min-width: 0; }
+  .playlist-title { font-size: 13px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .playlist-count { font-size: 11px; color: var(--text-tertiary); margin-top: 1px; }
+
+  /* Main Container & Views */
+  .app-container { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg-base); }
+  .app-view { flex: 1; overflow-y: auto; padding: 24px; display: none; }
+  .app-view.active { display: block; }
+
+  /* View: Discover */
+  .d-banner {
+    background: linear-gradient(105deg, #DF5E7A 0%, #5B6327 100%);
+    border-radius: 14px; padding: 32px; display: flex; align-items: center;
+    justify-content: space-between; gap: 20px; margin-bottom: 28px;
+  }
+  .d-banner-left { max-width: 65%; }
+  .d-banner-tag { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.7); text-transform: uppercase; margin-bottom: 8px; }
+  .d-banner-title { font-size: 22px; font-weight: 800; line-height: 1.3; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .d-banner-author { font-size: 13px; color: rgba(255,255,255,0.8); margin-bottom: 18px; }
+  .btn-play-now {
+    background: #FFF; color: #000; border: none; padding: 10px 22px;
+    border-radius: 20px; font-weight: 700; font-size: 13px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .d-banner-cover { width: 120px; height: 120px; border-radius: 8px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; text-align: center; padding: 10px; }
+
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-heading { font-size: 18px; font-weight: 800; }
+  .section-more { font-size: 12px; color: var(--text-tertiary); cursor: pointer; font-weight: 600; }
+  
+  .tab-bar { display: flex; gap: 6px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; }
+  .tab-item {
+    background: var(--bg-elevated); padding: 6px 14px; border-radius: 16px;
+    font-size: 12.5px; font-weight: 600; color: var(--text-secondary); cursor: pointer; white-space: nowrap;
+  }
+  .tab-item.active { background: var(--brand); color: #fff; }
+
+  .horizontal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 14px; }
+  .music-card { cursor: pointer; }
+  .music-card-cover { width: 100%; aspect-ratio: 1; border-radius: 10px; background: var(--bg-elevated); margin-bottom: 8px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; }
+  .music-card-cover img { width: 100%; height: 100%; object-fit: cover; }
+  .music-card-title { font-size: 12px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 34px; color: var(--text-primary); }
+  .music-card-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* View: Search */
+  .search-wrapper { display: flex; flex-direction: column; gap: 16px; }
+  .search-input-box {
+    background: var(--bg-elevated); border-radius: 20px; height: 40px;
+    display: flex; align-items: center; padding: 0 16px; gap: 10px; border: 1px solid rgba(255,255,255,0.05);
+  }
+  .search-input-box input { background: transparent; border: none; outline: none; color: #fff; font-size: 14px; flex: 1; }
+  .search-results-list { display: flex; flex-direction: column; gap: 2px; }
+  .list-row {
+    display: grid; grid-template-columns: 40px 44px 1fr 100px 60px;
+    align-items: center; padding: 10px; border-radius: 8px; cursor: pointer; transition: background 0.2s;
+  }
+  .list-row:hover { background: var(--bg-highlight); }
+  .list-index { font-size: 13px; color: var(--text-tertiary); text-align: center; }
+  .list-cover { width: 36px; height: 36px; border-radius: 4px; overflow: hidden; background: #333; }
+  .list-cover img { width: 100%; height: 100%; object-fit: cover; }
+  .list-main-info { display: flex; flex-direction: column; padding-right: 10px; }
+  .list-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-artist { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+  .list-tag { font-size: 11px; color: var(--text-tertiary); }
+  .list-duration { font-size: 12px; color: var(--text-tertiary); text-align: right; }
+
+  /* View: Playlist Detail */
+  .p-header { display: flex; gap: 20px; align-items: flex-end; margin-bottom: 24px; background: linear-gradient(to bottom, rgba(59,132,85,0.2), transparent); padding: 20px; border-radius: 12px; }
+  .p-header-cover { width: 130px; height: 130px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 48px; }
+  .p-header-info { flex: 1; }
+  .p-header-type { font-size: 11px; font-weight: 700; color: var(--brand); text-transform: uppercase; margin-bottom: 4px; }
+  .p-header-title { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+  .p-header-count { font-size: 12px; color: var(--text-secondary); }
+
+  /* View: Settings */
+  .settings-section { display: flex; flex-direction: column; gap: 24px; }
+  .settings-block { background: var(--bg-elevated); border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.03); }
+  .settings-block-title { font-size: 12px; font-weight: 700; color: var(--text-tertiary); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .settings-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .settings-item:last-child { border-bottom: none; }
+  .settings-item-left { display: flex; flex-direction: column; gap: 2px; }
+  .settings-item-title { font-size: 14px; font-weight: 600; }
+  .settings-item-desc { font-size: 11px; color: var(--text-tertiary); }
+  .settings-item-value { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  
+  /* Toggle Switch */
+  .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; inset: 0; background-color: #444; border-radius: 34px; transition: .2s; }
+  .slider::before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .2s; }
+  input:checked + .slider { background-color: var(--brand); }
+  input:checked + .slider::before { transform: translateX(18px); }
+  .color-dot { width: 16px; height: 16px; border-radius: 50%; background: var(--brand); display: inline-block; }
+
+  /* Right Panel: Now Playing Lyrics */
+  .app-nowplaying {
+    width: 0; background: var(--bg-sidebar); border-left: 1px solid rgba(255,255,255,0.02);
+    display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease; flex-shrink: 0;
+  }
+  .app-nowplaying.expanded { width: 260px; }
+  .np-header { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .np-body { flex: 1; overflow-y: auto; padding: 20px 16px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+  .np-big-cover { width: 160px; height: 160px; border-radius: 12px; margin-bottom: 16px; display: flex; align-items: center; justify-content: center; font-size: 64px; }
+  .np-song-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .np-song-artist { font-size: 12px; color: var(--text-secondary); margin-bottom: 24px; }
+  .np-tabs { display: flex; background: var(--bg-elevated); padding: 3px; border-radius: 12px; gap: 4px; width: 100%; margin-bottom: 20px; }
+  .np-tab { flex: 1; font-size: 11.5px; padding: 6px; border-radius: 9px; cursor: pointer; color: var(--text-secondary); font-weight: 600; }
+  .np-tab.active { background: var(--bg-highlight); color: #fff; }
+  .lyrics-box { display: flex; flex-direction: column; gap: 14px; width: 100%; padding: 10px 0; }
+  .lyric-l { font-size: 13px; color: var(--text-tertiary); line-height: 1.4; transition: all 0.2s; }
+  .lyric-l.active { color: var(--brand); font-weight: 700; font-size: 14px; }
+
+  /* Bottom Playbar */
+  .app-playbar {
+    height: 76px; background: #0A0A0D; border-top: 1px solid rgba(255,255,255,0.03);
+    display: flex; align-items: center; padding: 0 20px; gap: 16px; z-index: 10; user-select: none;
+  }
+  .pb-left { display: flex; align-items: center; gap: 12px; width: 25%; min-width: 160px; }
+  .pb-mini-cover { width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .pb-meta { display: flex; flex-direction: column; min-width: 0; }
+  .pb-title { font-size: 13.5px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pb-artist { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .pb-icon-btn { color: var(--text-secondary); cursor: pointer; font-size: 16px; margin-left: 8px; transition: color 0.2s; }
+  .pb-icon-btn:hover, .pb-icon-btn.active { color: var(--brand); }
+
+  .pb-center { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 540px; }
+  .pb-controls { display: flex; align-items: center; gap: 18px; color: var(--text-secondary); font-size: 16px; }
+  .pb-btn { cursor: pointer; transition: color 0.2s; }
+  .pb-btn:hover { color: #fff; }
+  .pb-btn-main { width: 36px; height: 36px; border-radius: 50%; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .pb-btn-main:hover { background: var(--brand-light); }
+  .pb-timeline { display: flex; align-items: center; gap: 8px; width: 100%; font-size: 10px; color: var(--text-tertiary); font-family: monospace; }
+  .pb-progress-bg { flex: 1; height: 3px; background: #2A2A30; border-radius: 2px; position: relative; cursor: pointer; }
+  .pb-progress-fill { height: 100%; background: var(--text-primary); border-radius: 2px; width: 0%; transition: width 0.1s linear; }
+  .pb-progress-bg:hover .pb-progress-fill { background: var(--brand); }
+
+  .pb-right { width: 25%; display: flex; align-items: center; justify-content: flex-end; gap: 14px; color: var(--text-secondary); }
+
+  /* ─── MOBILE MOCKUP ─── */
+  .mobile-wrapper { display: flex; flex-direction: column; align-items: center; }
+  .mobile-label { font-size: 12px; color: var(--text-tertiary); margin-bottom: 10px; font-weight: 600; }
+  
+  .mobile-frame {
+    width: 290px; height: 580px; background: #000; border-radius: 36px;
+    border: 3.5px solid #25252A; box-shadow: 0 40px 80px rgba(0,0,0,0.7);
+    overflow: hidden; position: relative; display: flex; flex-direction: column;
+  }
+  .mobile-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 110px; height: 26px; background: #000; border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; z-index: 100; }
+  .mobile-statusbar { height: 34px; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 20px 4px; font-size: 11px; font-weight: 600; color: #fff; z-index: 90; }
+  .mobile-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; background: var(--bg-base); }
+  
+  .mobile-view { flex: 1; overflow-y: auto; padding: 14px; display: none; padding-bottom: 70px; }
+  .mobile-view.active { display: block; }
+  .m-view-title { font-size: 20px; font-weight: 800; margin-bottom: 14px; }
+
+  /* Mobile Views Content Style */
+  .m-banner { background: linear-gradient(135deg, #DF5E7A 0%, #5B6327 100%); border-radius: 12px; padding: 16px; margin-bottom: 18px; }
+  .m-banner-title { font-size: 14px; font-weight: 800; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .m-banner-author { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 4px; margin-bottom: 10px; }
+  .m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* Mobile Bottom Navigation */
+  .mobile-nav {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 56px;
+    background: #09090C; border-top: 1px solid rgba(255,255,255,0.03);
+    display: flex; z-index: 80; padding-bottom: 4px;
+  }
+  .m-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--text-tertiary); cursor: pointer; }
+  .m-nav-item span { font-size: 9px; font-weight: 600; }
+  .m-nav-item svg { width: 18px; height: 18px; fill: currentColor; }
+  .m-nav-item.active { color: var(--brand); }
+
+  /* Mobile Mini Player Bar */
+  .mobile-miniplayer {
+    position: absolute; bottom: 56px; left: 6px; right: 6px; height: 46px;
+    background: var(--bg-surface); border-radius: 8px; display: flex; align-items: center;
+    padding: 0 10px; gap: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 75; cursor: pointer;
+  }
+  .m-mp-cover { width: 32px; height: 32px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .m-mp-info { flex: 1; min-width: 0; }
+  .m-mp-title { font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m-mp-artist { font-size: 10px; color: var(--text-secondary); }
+  .m-mp-btn { color: #fff; font-size: 14px; }
+
+  /* Mobile Full Screen Player View Overlay */
+  .mobile-fullscreen-player {
+    position: absolute; inset: 0; background: #0B0B0E; z-index: 200;
+    display: flex; flex-direction: column; padding: 40px 24px 24px;
+    transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .mobile-fullscreen-player.active { transform: translateY(0); }
+  .m-fp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .m-fp-close { font-size: 20px; color: var(--text-secondary); cursor: pointer; }
+  .m-fp-nav-text { font-size: 11px; font-weight: 700; color: var(--text-tertiary); letter-spacing: 1px; text-transform: uppercase; }
+  .m-fp-cover-box { width: 100%; aspect-ratio: 1; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 80px; margin: 10px 0 24px; box-shadow: 0 20px 4px rgba(0,0,0,0.3); }
+  .m-fp-meta-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .m-fp-title { font-size: 18px; font-weight: 800; }
+  .m-fp-artist { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
+  .m-fp-timeline { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+  .m-fp-time-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-tertiary); font-family: monospace; }
+  .m-fp-controls { display: flex; align-items: center; justify-content: space-between; padding: 0 10px; margin-bottom: 28px; }
+  .m-fp-btn-main { width: 56px; height: 56px; border-radius: 50%; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .m-fp-lyrics-preview { background: rgba(255,255,255,0.03); border-radius: 12px; padding: 14px; text-align: center; flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+
+  /* ─── FEATURES SECTION ─── */
+  .features-section { padding: 80px 24px; max-width: 1100px; margin: 0 auto; }
+  .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 50px; }
+  .feature-card { background: var(--bg-elevated); border-radius: 14px; padding: 28px; border: 1px solid rgba(255,255,255,0.04); transition: all 0.2s; }
+  .feature-card:hover { border-color: rgba(251,114,153,0.3); transform: translateY(-2px); }
+  .feature-icon { width: 44px; height: 44px; border-radius: 10px; margin-bottom: 16px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .fi-pink { background: rgba(251,114,153,0.12); }
+  .fi-blue { background: rgba(0,174,236,0.12); }
+  .fi-green { background: rgba(30,215,96,0.12); }
+  .fi-purple { background: rgba(139,92,246,0.12); }
+  .feature-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .feature-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+
+  /* ─── TECH SECTION ─── */
+  .tech-section { padding: 60px 24px 100px; text-align: center; background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(0,174,236,0.05) 0%, transparent 60%); }
+  .tech-chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 30px; }
+  .tech-chip { background: var(--bg-elevated); border: 1px solid rgba(255,255,255,0.05); border-radius: 20px; padding: 8px 16px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .tech-chip.highlight { border-color: var(--brand); color: var(--brand); }
+
+  /* ─── FOOTER ─── */
+  footer { text-align: center; padding: 40px 20px; border-top: 1px solid var(--bg-elevated); font-size: 13px; color: var(--text-tertiary); line-height: 1.6; }
+  footer a { color: var(--brand); text-decoration: none; font-weight: 500; }
+  footer a:hover { text-decoration: underline; }
+
+  .device-tag { font-size: 12px; font-weight: 700; color: var(--text-tertiary); margin-bottom: 14px; letter-spacing: 0.05em; text-transform: uppercase; display: flex; align-items: center; gap: 10px; width: 100%; }
+  .device-tag::before, .device-tag::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.05); }
+
+  @media (max-width: 980px) {
+    .devices-wrapper { flex-direction: column; align-items: center; }
+  }
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-content">
+    <div class="logo-row">
+      <div class="logo-icon">🎵</div>
+      <div class="logo-text">BiliTune</div>
+    </div>
+    <h1>用 B站收藏夹<br>听你最爱的<span>音乐</span></h1>
+    <p>把哔哩哔哩的收藏夹变成歌单，Spotify 的体验，B站的内容，Windows 与 Android 双端支持。</p>
+    <div class="badge-row">
+      <div class="badge"><div class="dot"></div>B站粉色主题</div>
+      <div class="badge"><div class="dot blue"></div>双端支持</div>
+      <div class="badge"><div class="dot green"></div>从字幕获取歌词</div>
+      <div class="badge"><div class="dot"></div>收藏夹即歌单</div>
+    </div>
+    <div class="cta-row">
+      <a class="cta-primary" href="https://github.com/WEP-56/BiliTune" target="_blank">⭐ GitHub 开源主页</a>
+      <a class="cta-secondary" href="#preview">立即体验交互预览 ↓</a>
+    </div>
+  </div>
+</section>
+
+<section class="devices-section" id="preview">
+  <div class="section-label">界面与交互预览</div>
+  <h2 class="section-title">精美双端设计</h2>
+  <p class="section-sub">深色沉浸 · B站品牌粉 · 精致排版，Windows 桌面与 Android 手机完美适配</p>
+
+  <div class="devices-wrapper">
+
+    <div class="device-wrapper" style="flex: 1; min-width: 320px; max-width: 960px; width: 100%;">
+      <div class="device-tag"><span>Windows 桌面客户端（可点击侧边栏交互）</span></div>
+      <div class="desktop-frame">
+        <div class="desktop-titlebar">
+          <div class="titlebar-dot td-red"></div>
+          <div class="titlebar-dot td-yellow"></div>
+          <div class="titlebar-dot td-green"></div>
+          <div class="titlebar-center">BiliTune</div>
+          <div class="titlebar-right-btns">
+            <span>weq56</span>
+            <span>☀️</span>
+            <span>🔔</span>
+            <span>➖</span>
+            <span>🔲</span>
+            <span>❌</span>
+          </div>
+        </div>
+
+        <div class="desktop-app">
+          <div class="app-sidebar">
+            <div class="sidebar-brand">
+              <span>BiliTune</span>
+            </div>
+            <div class="nav-group">
+              <div class="nav-item active" onclick="switchDesktopView('discover', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>
+                发现音乐
+              </div>
+              <div class="nav-item" onclick="switchDesktopView('search', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                搜索
+              </div>
+              <div class="nav-item" onclick="switchDesktopView('download', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                下载
+              </div>
+              <div class="nav-item" onclick="switchDesktopView('settings', this)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                设置
+              </div>
+            </div>
+
+            <div class="sidebar-label">我的歌单</div>
+            <div class="nav-group">
+              <div class="playlist-item" onclick="switchDesktopView('discover', this)">
+                <div class="playlist-box pb-blue">🎵</div>
+                <div class="playlist-meta">
+                  <span class="playlist-title">最近播放</span>
+                  <span class="playlist-count">20 首</span>
+                </div>
+              </div>
+              <div class="playlist-item" onclick="switchDesktopView('discover', this)">
+                <div class="playlist-box pb-orange">⭐</div>
+                <div class="playlist-meta">
+                  <span class="playlist-title">默认收藏夹</span>
+                  <span class="playlist-count">858 首</span>
+                </div>
+              </div>
+              <div class="playlist-item" id="desktop-nav-rap" onclick="switchDesktopView('playlist-detail', this)">
+                <div class="playlist-box pb-green">🎤</div>
+                <div class="playlist-meta">
+                  <span class="playlist-title">说唱</span>
+                  <span class="playlist-count">2 首</span>
+                </div>
+              </div>
+              <div class="playlist-item" onclick="switchDesktopView('discover', this)">
+                <div class="playlist-box pb-olive">🎼</div>
+                <div class="playlist-meta">
+                  <span class="playlist-title">音乐</span>
+                  <span class="playlist-count">0 首</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="app-container">
+            
+            <div class="app-view active" id="dk-view-discover">
+              <div class="d-banner">
+                <div class="d-banner-left">
+                  <div class="d-banner-tag">今日推荐</div>
+                  <div class="d-banner-title">【朱志鑫】千万粉丝福利 歌曲《100》Cover | 以一百分真心，陪你爱到一百岁</div>
+                  <div class="d-banner-author">朱志鑫放映厅</div>
+                  <button class="btn-play-now">▶ 立即播放</button>
+                </div>
+                <div class="d-banner-cover">一万个不回头 的理由 100</div>
+              </div>
+
+              <div class="section-header">
+                <span class="section-heading">音乐排行榜</span>
+                <span class="section-more">查看全部</span>
+              </div>
+
+              <div class="tab-bar">
+                <div class="tab-item active">全站音乐榜</div>
+                <div class="tab-item">音乐区总榜</div>
+                <div class="tab-item">原创音乐</div>
+                <div class="tab-item">翻唱</div>
+                <div class="tab-item">VOCALOID-UTAU</div>
+                <div class="tab-item">演奏</div>
+              </div>
+
+              <div class="horizontal-grid">
+                <div class="music-card" onclick="playMockSong('【朱志鑫】千万粉丝福利 歌曲《100》Cover', '朱志鑫放映厅', '#D27C3A')">
+                  <div class="music-card-cover"><div style="color:#D27C3A;font-size:24px;">100</div></div>
+                  <div class="music-card-title">【朱志鑫】千万粉丝福利 歌曲《100》Cover</div>
+                  <div class="music-card-sub">朱志鑫放映厅</div>
+                </div>
+                <div class="music-card">
+                  <div class="music-card-cover"><div style="color:#5B6327;font-size:11px;padding:4px;text-align:center;">aespa LEMONADE</div></div>
+                  <div class="music-card-title">aespa 《LEMONADE》 后台直拍合集</div>
+                  <div class="music-card-sub">SMTOWN</div>
+                </div>
+                <div class="music-card">
+                  <div class="music-card-cover"><div style="color:#FF5F56;font-size:24px;">👁️</div></div>
+                  <div class="music-card-title">【官方投稿】cute mental health check...</div>
+                  <div class="music-card-sub">花生p_official</div>
+                </div>
+                <div class="music-card">
+                  <div class="music-card-cover"><div style="color:#2D5B94;font-size:11px;padding:4px;text-align:center;">LUCKY 循环歌单</div></div>
+                  <div class="music-card-title">循环歌单 | 【lucky】做个被好运...</div>
+                  <div class="music-card-sub">蛋菜人音乐</div>
+                </div>
+                <div class="music-card">
+                  <div class="music-card-cover"><div style="background:#111;color:#fff;font-size:10px;text-align:center;padding:5px;">别走别走...</div></div>
+                  <div class="music-card-title">别走别走别走... 即使节日的夜晚终将...</div>
+                  <div class="music-card-sub">gfssyjkoddx2329</div>
+                </div>
+                <div class="music-card">
+                  <div class="music-card-cover"><div style="background:#333;color:#F1C40F;font-size:12px;font-weight:bold;">绝区零</div></div>
+                  <div class="music-card-title">《绝区零》公测全新电音OST合集</div>
+                  <div class="music-card-sub">绝区零</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="app-view" id="dk-view-search">
+              <div class="search-wrapper">
+                <div class="search-input-box">
+                  <span>🔍</span>
+                  <input type="text" value="英文说唱" placeholder="搜索歌曲、UP主、BV号...">
+                </div>
+                <div class="tab-bar">
+                  <div class="tab-item active">音乐</div>
+                  <div class="tab-item">全站视频</div>
+                </div>
+                <div class="search-results-list">
+                  <div class="list-row" onclick="playMockSong('怎样快速上手英文rap (以godzilla为例)', '娃娃说英语', '#444')">
+                    <span class="list-index">1</span>
+                    <div class="list-cover"></div>
+                    <div class="list-main-info">
+                      <span class="list-title">怎样快速上手英文rap (以godzilla为例)</span>
+                      <span class="list-artist">娃娃说英语</span>
+                    </div>
+                    <span class="list-tag">📹 视频</span>
+                    <span class="list-duration">7:52</span>
+                  </div>
+                  <div class="list-row" onclick="playMockSong('推荐50首英文说唱（第二期）', '小涵音乐港', '#555')">
+                    <span class="list-index">2</span>
+                    <div class="list-cover"></div>
+                    <div class="list-main-info">
+                      <span class="list-title">推荐50首英文说唱（第二期）</span>
+                      <span class="list-artist">小涵音乐港</span>
+                    </div>
+                    <span class="list-tag">📹 视频</span>
+                    <span class="list-duration">33:25</span>
+                  </div>
+                  <div class="list-row active-row" style="background: rgba(255,255,255,0.04);" onclick="playMockSong('推荐四首仙品说唱的英文歌', '红尘音声', '#666')">
+                    <span class="list-index">3</span>
+                    <div class="list-cover"></div>
+                    <div class="list-main-info">
+                      <span class="list-title">推荐四首仙品说唱的英文歌</span>
+                      <span class="list-artist">红尘音声</span>
+                    </div>
+                    <span class="list-tag">📹 视频</span>
+                    <span class="list-duration">13:16</span>
+                  </div>
+                  <div class="list-row" onclick="playMockSong('【中字】英文字母歌，但是说唱版', '808Tuesday', '#777')">
+                    <span class="list-index">4</span>
+                    <div class="list-cover"></div>
+                    <div class="list-main-info">
+                      <span class="list-title">【中字】英文字母歌，但是说唱版</span>
+                      <span class="list-artist">808Tuesday</span>
+                    </div>
+                    <span class="list-tag">📹 视频</span>
+                    <span class="list-duration">2:49</span>
+                  </div>
+                  <div class="list-row" onclick="playMockSong('英文说唱Cypher Part.1', 'YFifteen', '#222')">
+                    <span class="list-index">5</span>
+                    <div class="list-cover"></div>
+                    <div class="list-main-info">
+                      <span class="list-title">英文说唱Cypher Part.1</span>
+                      <span class="list-artist">YFifteen</span>
+                    </div>
+                    <span class="list-tag">📹 视频</span>
+                    <span class="list-duration">3:00</span>
+                  </div>
+                  <div class="list-row" onclick="playMockSong('【官方MV】JoZ - 英文说唱', '太合音乐', '#888')">
+                    <span class="list-index">6</span>
+                    <div class="list-cover"></div>
+                    <div class="list-main-info">
+                      <span class="list-title">【官方MV】JoZ - 英文说唱</span>
+                      <span class="list-artist">太合音乐</span>
+                    </div>
+                    <span class="list-tag">📹 视频</span>
+                    <span class="list-duration">3:36</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="app-view" id="dk-view-playlist-detail">
+              <div class="p-header">
+                <div class="p-header-cover pb-green">🎤</div>
+                <div class="p-header-info">
+                  <div class="p-header-type">B站收藏夹</div>
+                  <div class="p-header-title">说唱</div>
+                  <div class="p-header-count">2 首歌曲</div>
+                </div>
+                <button class="btn-play-now" style="background:var(--brand); color:#fff;">▶ 播放</button>
+              </div>
+              <div class="search-input-box" style="margin-bottom: 16px; border-radius: 8px; height: 34px;">
+                <span>🔍</span>
+                <input type="text" placeholder="搜索当前歌单的歌曲" style="font-size:12px;">
+              </div>
+              <div class="search-results-list">
+                <div class="list-row" onclick="playMockSong('推荐四首仙品说唱的英文歌', '红尘音声', '#666')">
+                  <span class="list-index">1</span>
+                  <div class="list-cover"></div>
+                  <div class="list-main-info">
+                    <span class="list-title">推荐四首仙品说唱的英文歌</span>
+                    <span class="list-artist">红尘音声</span>
+                  </div>
+                  <span class="list-tag">📹 视频</span>
+                  <span class="list-duration">13:16</span>
+                </div>
+                <div class="list-row" onclick="playMockSong('英国电子说唱，正在掌控地下', 'Mkuag', '#34495E')">
+                  <span class="list-index">2</span>
+                  <div class="list-cover"></div>
+                  <div class="list-main-info">
+                    <span class="list-title">英国电子说唱，正在掌控地下</span>
+                    <span class="list-artist">Mkuag</span>
+                  </div>
+                  <span class="list-tag">📹 视频</span>
+                  <span class="list-duration">2:32</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="app-view" id="dk-view-download">
+              <h3 style="margin-bottom:12px;">下载管理</h3>
+              <p style="color:var(--text-tertiary); font-size:13px;">暂无正在下载的任务或本地历史记录。</p>
+            </div>
+
+            <div class="app-view" id="dk-view-settings">
+              <h2 style="font-size:22px; font-weight:800; margin-bottom: 20px;">设置</h2>
+              <div class="settings-section">
+                <div class="settings-block">
+                  <div class="settings-block-title">外观</div>
+                  <div class="settings-item">
+                    <div class="settings-item-left">
+                      <span class="settings-item-title">深色模式</span>
+                      <span class="settings-item-desc">关闭后切换为浅色主题</span>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" checked>
+                      <span class="slider"></span>
+                    </label>
+                  </div>
+                  <div class="settings-item">
+                    <div class="settings-item-left">
+                      <span class="settings-item-title">主题色</span>
+                    </div>
+                    <div class="settings-item-value"><span class="color-dot"></span></div>
+                  </div>
+                </div>
+
+                <div class="settings-block">
+                  <div class="settings-block-title">播放</div>
+                  <div class="settings-item">
+                    <div class="settings-item-left">
+                      <span class="settings-item-title">默认音质</span>
+                    </div>
+                    <div class="settings-item-value">自动 ❯</div>
+                  </div>
+                  <div class="settings-item">
+                    <div class="settings-item-left">
+                      <span class="settings-item-title">播放倍速</span>
+                    </div>
+                    <div class="settings-item-value">1.0x ❯</div>
+                  </div>
+                  <div class="settings-item">
+                    <div class="settings-item-left">
+                      <span class="settings-item-title">响度均衡</span>
+                    </div>
+                    <div class="settings-item-value">未启用 ❯</div>
+                  </div>
+                </div>
+
+                <div class="settings-block">
+                  <div class="settings-block-title">下载</div>
+                  <div class="settings-item">
+                    <div class="settings-item-left">
+                      <span class="settings-item-title">下载格式</span>
+                    </div>
+                    <div class="settings-item-value">原始音频 ❯</div>
+                  </div>
+                  <div class="settings-item">
+                    <div class="settings-item-left">
+                      <span class="settings-item-title">同时下载数</span>
+                    </div>
+                    <div class="settings-item-value">3 ❯</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="app-nowplaying" id="desktop-lyric-panel">
+            <div class="np-header">
+              <span style="font-size:13px; font-weight:700;">正在播放</span>
+              <span style="cursor:pointer; font-size:12px; color:var(--text-tertiary)" onclick="toggleDesktopLyrics()">✕</span>
+            </div>
+            <div class="np-body">
+              <div class="np-big-cover" id="np-panel-cover" style="background:#5F743D;">🎵</div>
+              <div class="np-song-title" id="np-panel-title">夜的第七章</div>
+              <div class="np-song-artist" id="np-panel-artist">周杰伦</div>
+              <div class="np-tabs">
+                <div class="np-tab active">歌词</div>
+                <div class="np-tab">队列</div>
+                <div class="np-tab">相关</div>
+              </div>
+              <div class="lyrics-box">
+                <span class="lyric-l">1983年小巷12月晴朗 夜的第七章</span>
+                <span class="lyric-l active">月光下的歌声轻轻响起</span>
+                <span class="lyric-l">你的旋律划过我心底</span>
+                <span class="lyric-l">打字机继续推向 接近事实的下一行</span>
+                <span class="lyric-l">石楠烟斗的雾 飘向枯萎的树</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="app-playbar">
+          <div class="pb-left">
+            <div class="pb-mini-cover" id="pb-cover-art" style="background:#5F743D;">🎵</div>
+            <div class="pb-meta">
+              <span class="pb-title" id="pb-track-title">夜的第七章</span>
+              <span class="pb-artist" id="pb-track-artist">周杰伦</span>
+            </div>
+            <span class="pb-icon-btn active">❤️</span>
+          </div>
+
+          <div class="pb-center">
+            <div class="pb-controls">
+              <span class="pb-btn">🔀</span>
+              <span class="pb-btn">⏮️</span>
+              <div class="pb-btn pb-btn-main" style="cursor:pointer;" onclick="togglePlayPause(this)">⏸️</div>
+              <span class="pb-btn">⏭️</span>
+              <span class="pb-btn">🔁</span>
+            </div>
+            <div class="pb-timeline">
+              <span>0:00</span>
+              <div class="pb-progress-bg">
+                <div class="pb-progress-fill" style="width: 38%"></div>
+              </div>
+              <span>4:32</span>
+            </div>
+          </div>
+
+          <div class="pb-right">
+            <span class="pb-icon-btn" title="查看歌词面板" onclick="toggleDesktopLyrics()">📝</span>
+            <span class="pb-icon-btn"> Re </span>
+            <span class="pb-icon-btn">🔊</span>
+            <div style="width:60px; height:3px; background:#444; border-radius:2px; position:relative;">
+              <div style="position:absolute; left:0; top:0; bottom:0; width:70%; background:var(--text-secondary); border-radius:2px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="device-wrapper">
+      <div class="device-tag"><span>Android 移动手机端（可点击底部菜单与播放条）</span></div>
+      <div class="mobile-frame">
+        <div class="mobile-notch"></div>
+        <div class="mobile-statusbar">
+          <span>2:34 🅰️</span>
+          <div style="display:flex; gap:4px;">📶 🔋</div>
+        </div>
+
+        <div class="mobile-container">
+          
+          <div class="mobile-view active" id="mb-view-discover">
+            <div class="m-banner">
+              <div class="m-banner-title">【朱志鑫】千万粉丝福利 歌曲《100》Cover | 以一百分真心，陪你爱到一百岁</div>
+              <div class="m-banner-author">朱志鑫放映厅</div>
+              <button class="btn-play-now" style="font-size:11px; padding:6px 14px;">▶ 立即播放</button>
+            </div>
+            <div class="section-header">
+              <span class="section-heading" style="font-size:15px;">音乐排行榜</span>
+              <span class="section-more">查看全部</span>
+            </div>
+            <div class="tab-bar" style="margin-bottom:12px;">
+              <div class="tab-item active" style="font-size:11px; padding:4px 10px;">全站音乐榜</div>
+              <div class="tab-item" style="font-size:11px; padding:4px 10px;">音乐区总榜</div>
+              <div class="tab-item" style="font-size:11px; padding:4px 10px;">原创</div>
+            </div>
+            <div class="m-grid">
+              <div style="background:var(--bg-elevated); padding:8px; border-radius:8px;" onclick="playMockSong('【朱志鑫】《100》', '朱志鑫放映厅', '#D27C3A')">
+                <div style="height:90px; background:#444; border-radius:6px; margin-bottom:6px; display:flex; align-items:center; justify-content:center; font-size:12px;">100</div>
+                <div style="font-size:11px; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">【朱志鑫】《100》Cover</div>
+              </div>
+              <div style="background:var(--bg-elevated); padding:8px; border-radius:8px;">
+                <div style="height:90px; background:#555; border-radius:6px; margin-bottom:6px; display:flex; align-items:center; justify-content:center; font-size:10px; padding:4px; text-align:center;">aespa LEMONADE</div>
+                <div style="font-size:11px; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">aespa 《LEMONADE》</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mobile-view" id="mb-view-search">
+            <div class="search-input-box" style="margin-bottom:12px; height:34px; border-radius:10px;">
+              <span>🔍</span>
+              <input type="text" value="英文说唱" style="font-size:12px;">
+            </div>
+            <div class="tab-bar" style="margin-bottom:10px;">
+              <div class="tab-item active" style="font-size:11px; padding:4px 10px;">音乐</div>
+              <div class="tab-item" style="font-size:11px; padding:4px 10px;">全站视频</div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; gap:10px; align-items:center; background:rgba(255,255,255,0.02); padding:6px; border-radius:6px;" onclick="playMockSong('怎样快速上手英文rap', '娃娃说英语', '#444')">
+                <span style="font-size:12px; color:var(--text-tertiary);">1</span>
+                <div style="width:32px; height:32px; background:#333; border-radius:4px;"></div>
+                <div style="flex:1; min-width:0;"><div style="font-size:12px; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">怎样快速上手英文rap</div><div style="font-size:10px; color:var(--text-tertiary);">娃娃说英语</div></div>
+              </div>
+              <div style="display:flex; gap:10px; align-items:center; background:rgba(255,255,255,0.02); padding:6px; border-radius:6px;" onclick="playMockSong('推荐四首仙品说唱', '红尘音声', '#666')">
+                <span style="font-size:12px; color:var(--text-tertiary);">2</span>
+                <div style="width:32px; height:32px; background:#555; border-radius:4px;"></div>
+                <div style="flex:1; min-width:0;"><div style="font-size:12px; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">推荐四首仙品说唱</div><div style="font-size:10px; color:var(--text-tertiary);">红尘音声</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mobile-view" id="mb-view-playlist">
+            <div style="background: linear-gradient(to right, #2D5B94, transparent); padding:14px; border-radius:10px; display:flex; gap:12px; align-items:center; margin-bottom:14px;">
+              <div style="width:50px; height:50px; background: rgba(255,255,255,0.1); border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:20px;">🎵</div>
+              <div>
+                <div style="font-size:16px; font-weight:800;">最近播放</div>
+                <div style="font-size:11px; color:rgba(255,255,255,0.6); margin-top:2px;">20首歌曲</div>
+              </div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:4px;">
+              <div style="font-size:12px; padding:6px 0; color:var(--text-secondary);">1 小朱诺诺... · 老鼠夫斯基</div>
+              <div style="font-size:12px; padding:6px 0; color:var(--text-secondary);">2 【Guxue... · A充满正能...</div>
+              <div style="font-size:12px; padding:6px 0; color:var(--text-secondary);">3 朱诺比心... · 发点傻掉猫...</div>
+            </div>
+          </div>
+
+          <div class="mobile-view" id="mb-view-profile">
+            <div class="m-view-title">我的</div>
+            <div style="background:var(--bg-elevated); border-radius:12px; padding:16px; text-align:center;">
+              <div style="width:50px; height:50px; background:var(--brand); border-radius:50%; margin:0 auto 10px;"></div>
+              <div style="font-size:15px; font-weight:bold;">weq56</div>
+              <div style="font-size:11px; color:var(--text-tertiary); margin-top:4px;">BiliTune 忠实粉丝</div>
+            </div>
+          </div>
+
+          <div class="mobile-miniplayer" onclick="toggleMobileFullscreenPlayer(true)">
+            <div class="m-mp-cover" id="m-mini-cover" style="background:#5F743D;">🎵</div>
+            <div class="m-mp-info">
+              <div class="m-mp-title" id="m-mini-title">夜的第七章</div>
+              <div class="m-mp-artist" id="m-mini-artist">周杰伦</div>
+            </div>
+            <span class="m-mp-btn">❤️</span>
+            <span class="m-mp-btn" style="margin-left:4px;">▶️</span>
+          </div>
+
+          <div class="mobile-nav">
+            <div class="m-nav-item active" onclick="switchMobileTab('discover', this)">
+              <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+              <span>发现</span>
+            </div>
+            <div class="m-nav-item" onclick="switchMobileTab('search', this)">
+              <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+              <span>搜索</span>
+            </div>
+            <div class="m-nav-item" onclick="switchMobileTab('playlist', this)">
+              <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0-2-.9-2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
+              <span>歌单</span>
+            </div>
+            <div class="m-nav-item" onclick="switchMobileTab('profile', this)">
+              <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+              <span>我的</span>
+            </div>
+          </div>
+
+          <div class="mobile-fullscreen-player" id="mobile-fs-player">
+            <div class="m-fp-header">
+              <span class="m-fp-close" onclick="toggleMobileFullscreenPlayer(false); event.stopPropagation();"> Expand ⬇ </span>
+              <span class="m-fp-nav-text">正在播放</span>
+              <span style="font-size:18px;">...</span>
+            </div>
+            <div class="m-fp-cover-box" id="m-full-cover" style="background:#5F743D;">🎵</div>
+            <div class="m-fp-meta-row">
+              <div>
+                <div class="m-fp-title" id="m-full-title">夜的第七章</div>
+                <div class="m-fp-artist" id="m-full-artist">周杰伦</div>
+              </div>
+              <span style="font-size:22px; color:var(--brand);">❤️</span>
+            </div>
+            <div class="m-fp-timeline">
+              <div style="height:3px; background:#333; border-radius:2px; position:relative; width:100%;">
+                <div style="position:absolute; left:0; top:0; bottom:0; width:15%; background:var(--brand); border-radius:2px;"></div>
+              </div>
+              <div class="m-fp-time-labels">
+                <span>0:02</span>
+                <span>4:32</span>
+              </div>
+            </div>
+            <div class="m-fp-controls">
+              <span style="font-size:18px; color:var(--text-tertiary);">🔀</span>
+              <span style="font-size:22px;">⏮️</span>
+              <div class="m-fp-btn-main">⏸️</div>
+              <span style="font-size:22px;">⏭️</span>
+              <span style="font-size:18px; color:var(--text-tertiary);">🔁</span>
+            </div>
+            <div class="m-fp-lyrics-preview">
+              <span style="color:var(--brand); font-weight:bold; font-size:13.5px;">月光下的歌声轻轻响起</span>
+              <span style="color:var(--text-tertiary); font-size:11.5px;">你的旋律划过我心底</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="features-section">
+  <div style="text-align:center;">
+    <div class="section-label">核心功能</div>
+    <h2 class="section-title">为什么选择 BiliTune</h2>
+    <p class="section-sub">专为 B站用户设计，融合 Spotify 体验与哔哩哔哩内容生态</p>
+  </div>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon fi-pink">📂</div>
+      <div class="feature-title">收藏夹即歌单</div>
+      <div class="feature-desc">将你的 B站收藏夹直接当作歌单使用，也可以在应用内创建新收藏夹、添加视频。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-blue">📝</div>
+      <div class="feature-title">字幕提取歌词</div>
+      <div class="feature-desc">从视频字幕自动获取歌词并逐行同步高亮，带你重新发现熟悉的旋律。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-green">💻</div>
+      <div class="feature-title">Windows + Android</div>
+      <div class="feature-desc">Flutter 跨平台开发，Windows 桌面与 Android 手机体验高度一致，随时切换。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-purple">🎨</div>
+      <div class="feature-title">沉浸式深色 UI</div>
+      <div class="feature-desc">专辑封面渐变提色，动态背景随当前歌曲自动变化，界面退居幕后让内容成为主角。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-pink">🎬</div>
+      <div class="feature-title">视频 + 音频双源</div>
+      <div class="feature-desc">同时支持 B站视频区与音频区内容，用 BV 号或关键词直接搜索，一个 App 全搞定。</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon fi-blue">⚡</div>
+      <div class="feature-title">流畅微交互</div>
+      <div class="feature-desc">200ms ease 过渡动画，悬停浮现播放按钮，进度条智能扩展，每一处细节都经过打磨。</div>
+    </div>
+  </div>
+</section>
+
+<section class="tech-section">
+  <div class="section-label">技术栈</div>
+  <h2 class="section-title" style="text-align:center;">基于优秀开源项目</h2>
+  <div class="tech-chips">
+    <div class="tech-chip highlight">Flutter</div>
+    <div class="tech-chip highlight">Dart</div>
+    <div class="tech-chip">Riverpod</div>
+    <div class="tech-chip">go_router</div>
+    <div class="tech-chip">just_audio</div>
+    <div class="tech-chip">Nemo2011/bilibili-api</div>
+    <div class="tech-chip">dio</div>
+    <div class="tech-chip">Windows</div>
+    <div class="tech-chip">Android</div>
+  </div>
+</section>
+
+<footer>
+  <p>BiliTune — 开源项目 · <a href="https://github.com/WEP-56/BiliTune" target="_blank">GitHub</a></p>
+  <p style="margin-top:8px;">API 来自 <a href="https://github.com/Nemo2011/bilibili-api" target="_blank">Nemo2011/bilibili-api</a></p>
+</footer>
+
+<script>
+  // Desktop navigation switching logic
+  function switchDesktopView(viewId, element) {
+    // Hide all desktop views
+    const views = document.querySelectorAll('.app-view');
+    views.forEach(v => v.classList.remove('active'));
+    
+    // Show selected view
+    const targetView = document.getElementById('dk-view-' + viewId);
+    if (targetView) targetView.classList.add('active');
+    
+    // Manage active class in nav menus
+    const navItems = document.querySelectorAll('.nav-item, .playlist-item');
+    navItems.forEach(item => item.classList.remove('active'));
+    element.classList.add('active');
+  }
+
+  // Toggle Right Side Panel (Lyrics) on Desktop
+  function toggleDesktopLyrics() {
+    const panel = document.getElementById('desktop-lyric-panel');
+    panel.classList.toggle('expanded');
+  }
+
+  // Mobile Tab bar Switching logic
+  function switchMobileTab(tabId, element) {
+    const mViews = document.querySelectorAll('.mobile-view');
+    mViews.forEach(v => v.classList.remove('active'));
+    
+    const targetMView = document.getElementById('mb-view-' + tabId);
+    if (targetMView) targetMView.classList.add('active');
+    
+    const mTabs = document.querySelectorAll('.m-nav-item');
+    mTabs.forEach(t => t.classList.remove('active'));
+    element.classList.add('active');
+  }
+
+  // Expand / Collapse Mobile Fullscreen Player panel
+  function toggleMobileFullscreenPlayer(show) {
+    const fsPlayer = document.getElementById('mobile-fs-player');
+    if (show) {
+      fsPlayer.classList.add('active');
+    } else {
+      fsPlayer.classList.remove('active');
+    }
+  }
+
+  // Interactive Play/Pause Mock Toggle button
+  function togglePlayPause(btn) {
+    if (btn.innerText === "⏸️") {
+      btn.innerText = "▶️";
+    } else {
+      btn.innerText = "⏸️";
+    }
+  }
+
+  // Dynamic song loading mock interaction
+  function playMockSong(title, artist, colorHex) {
+    // 1. Update Desktop Playbar & Lyric drawer panel info
+    document.getElementById('pb-track-title').innerText = title;
+    document.getElementById('pb-track-artist').innerText = artist;
+    document.getElementById('pb-cover-art').style.background = colorHex;
+    document.getElementById('np-panel-title').innerText = title;
+    document.getElementById('np-panel-artist').innerText = artist;
+    document.getElementById('np-panel-cover').style.background = colorHex;
+
+    // 2. Update Mobile Player bar & Full screen views info
+    document.getElementById('m-mini-title').innerText = title;
+    document.getElementById('m-mini-artist').innerText = artist;
+    document.getElementById('m-mini-cover').style.background = colorHex;
+    document.getElementById('m-full-title').innerText = title;
+    document.getElementById('m-full-artist').innerText = artist;
+    document.getElementById('m-full-cover').style.background = colorHex;
+  }
+</script>
+
+</body>
+</html>

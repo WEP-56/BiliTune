@@ -41,63 +41,27 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
     final auth = ref.watch(authProvider);
     final library = ref.watch(libraryProvider);
+    final downloads = ref.watch(downloadQueueProvider);
     final playback = ref.watch(playbackProvider);
     final playbackNotifier = ref.read(playbackProvider.notifier);
     final libraryNotifier = ref.read(libraryProvider.notifier);
 
-    if (!auth.isSignedIn) {
-      return ListView(
-        padding: EdgeInsets.fromLTRB(pad, AppSpacing.s4, pad, AppSpacing.s12),
-        children: [
-          Text(
-            '我的歌单',
-            style: AppTypography.titleL.copyWith(color: colors.textPrimary),
-          ),
-          const SizedBox(height: AppSpacing.s4),
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.s5),
-            decoration: BoxDecoration(
-              color: colors.bgElevated,
-              borderRadius: AppRadius.mdAll,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '登录后可同步 B 站收藏夹',
-                  style: AppTypography.titleS.copyWith(
-                    color: colors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s2),
-                Text(
-                  'BiliTune 会直接把 B 站收藏夹作为远程歌单使用。',
-                  style: AppTypography.body.copyWith(
-                    color: colors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.s4),
-                BrandButton(
-                  label: '去登录',
-                  icon: Icons.login_rounded,
-                  onTap: () => context.go('/settings'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
     final recentTracks = library.recentHistory;
+    final downloadedTracks = downloads.downloadedTracks;
     final playlists = <_PlaylistViewData>[
       _PlaylistViewData.recent(recentTracks.length),
+      _PlaylistViewData.downloads(downloadedTracks.length),
       ...library.folders.map(_PlaylistViewData.folder),
     ];
     final selected = _selectedPlaylist(playlists, library.selectedFolderId);
-    final selectedTracks = selected.isRecent
-        ? _filterTracks(recentTracks, library.trackKeyword)
-        : library.selectedFolderTracks;
+    final selectedTracks = switch (selected.kind) {
+      _PlaylistKind.recent => _filterTracks(recentTracks, library.trackKeyword),
+      _PlaylistKind.downloads => _filterTracks(
+        downloadedTracks,
+        library.trackKeyword,
+      ),
+      _PlaylistKind.folder => library.selectedFolderTracks,
+    };
 
     final content = isDesktop
         ? Row(
@@ -109,7 +73,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   playlists: playlists,
                   selectedId: selected.id,
                   isLoading: library.isLoading,
-                  onCreate: () => showCreateFavoriteFolderDialog(context),
+                  canCreate: auth.isSignedIn,
+                  onCreate: auth.isSignedIn
+                      ? () => showCreateFavoriteFolderDialog(context)
+                      : () => context.go('/settings'),
                   onSelect: _selectPlaylist,
                 ),
               ),
@@ -119,7 +86,9 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                   playlist: selected,
                   tracks: selectedTracks,
                   trackKeyword: library.trackKeyword,
-                  isLoadingTracks: library.isLoading,
+                  isLoadingTracks:
+                      library.isLoading &&
+                      selected.kind == _PlaylistKind.folder,
                   searchController: _trackSearchController,
                   playback: playback,
                   onSearchChanged: _scheduleTrackSearch,
@@ -131,13 +100,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                           selectedTracks.first,
                           queue: selectedTracks,
                         ),
-                  onRemoveTrack: selected.isRecent
-                      ? null
-                      : (track) =>
+                  onRemoveTrack: selected.kind == _PlaylistKind.folder
+                      ? (track) =>
                             libraryNotifier.removeTrackFromFavoriteFolder(
                               track,
                               selected.mediaId!,
-                            ),
+                            )
+                      : null,
                 ),
               ),
             ],
@@ -148,7 +117,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                 playlists: playlists,
                 selectedId: selected.id,
                 isLoading: library.isLoading,
-                onCreate: () => showCreateFavoriteFolderDialog(context),
+                canCreate: auth.isSignedIn,
+                onCreate: auth.isSignedIn
+                    ? () => showCreateFavoriteFolderDialog(context)
+                    : () => context.go('/settings'),
                 onSelect: _selectPlaylist,
               ),
               const SizedBox(height: AppSpacing.s6),
@@ -156,7 +128,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                 playlist: selected,
                 tracks: selectedTracks,
                 trackKeyword: library.trackKeyword,
-                isLoadingTracks: library.isLoading,
+                isLoadingTracks:
+                    library.isLoading && selected.kind == _PlaylistKind.folder,
                 searchController: _trackSearchController,
                 playback: playback,
                 onSearchChanged: _scheduleTrackSearch,
@@ -168,12 +141,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         selectedTracks.first,
                         queue: selectedTracks,
                       ),
-                onRemoveTrack: selected.isRecent
-                    ? null
-                    : (track) => libraryNotifier.removeTrackFromFavoriteFolder(
+                onRemoveTrack: selected.kind == _PlaylistKind.folder
+                    ? (track) => libraryNotifier.removeTrackFromFavoriteFolder(
                         track,
                         selected.mediaId!,
-                      ),
+                      )
+                    : null,
               ),
             ],
           );
@@ -190,13 +163,22 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               ),
             ),
             BrandButton(
-              label: '新建歌单',
-              icon: Icons.add_rounded,
+              label: auth.isSignedIn ? '新建歌单' : '登录同步',
+              icon: auth.isSignedIn ? Icons.add_rounded : Icons.login_rounded,
               variant: BiliButtonVariant.secondary,
-              onTap: () => showCreateFavoriteFolderDialog(context),
+              onTap: auth.isSignedIn
+                  ? () => showCreateFavoriteFolderDialog(context)
+                  : () => context.go('/settings'),
             ),
           ],
         ),
+        if (!auth.isSignedIn) ...[
+          const SizedBox(height: AppSpacing.s3),
+          Text(
+            '登录后可同步 B 站收藏夹；最近播放和我的下载可直接使用。',
+            style: AppTypography.caption.copyWith(color: colors.textSecondary),
+          ),
+        ],
         const SizedBox(height: AppSpacing.s5),
         if (library.errorMessage != null) ...[
           Text(
@@ -237,10 +219,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     _trackSearchDebounce?.cancel();
     _trackSearchController.clear();
     final notifier = ref.read(libraryProvider.notifier);
-    if (playlist.isRecent) {
-      notifier.selectRecent();
-    } else {
-      notifier.selectFolder(playlist.mediaId!);
+    switch (playlist.kind) {
+      case _PlaylistKind.recent:
+        notifier.selectRecent();
+      case _PlaylistKind.downloads:
+        notifier.selectDownloads();
+      case _PlaylistKind.folder:
+        notifier.selectFolder(playlist.mediaId!);
     }
   }
 
@@ -257,6 +242,7 @@ class _PlaylistList extends StatelessWidget {
     required this.playlists,
     required this.selectedId,
     required this.isLoading,
+    required this.canCreate,
     required this.onCreate,
     required this.onSelect,
   });
@@ -264,6 +250,7 @@ class _PlaylistList extends StatelessWidget {
   final List<_PlaylistViewData> playlists;
   final String selectedId;
   final bool isLoading;
+  final bool canCreate;
   final VoidCallback onCreate;
   final void Function(_PlaylistViewData playlist) onSelect;
 
@@ -291,29 +278,23 @@ class _PlaylistList extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: '新建歌单',
+                  tooltip: canCreate ? '新建歌单' : '登录同步收藏夹',
                   onPressed: onCreate,
-                  icon: Icon(Icons.add_rounded, color: colors.textSecondary),
+                  icon: Icon(
+                    canCreate ? Icons.add_rounded : Icons.login_rounded,
+                    color: colors.textSecondary,
+                  ),
                 ),
               ],
             ),
           ),
           if (isLoading) const LinearProgressIndicator(minHeight: 2),
-          if (playlists.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.s5),
-              child: Text(
-                '还没有歌单',
-                style: AppTypography.body.copyWith(color: colors.textSecondary),
-              ),
-            )
-          else
-            for (final playlist in playlists)
-              _PlaylistListTile(
-                playlist: playlist,
-                selected: playlist.id == selectedId,
-                onTap: () => onSelect(playlist),
-              ),
+          for (final playlist in playlists)
+            _PlaylistListTile(
+              playlist: playlist,
+              selected: playlist.id == selectedId,
+              onTap: () => onSelect(playlist),
+            ),
         ],
       ),
     );
@@ -435,9 +416,7 @@ class _PlaylistListTileState extends State<_PlaylistListTile> {
                 ),
               ),
               Icon(
-                widget.playlist.isPrivate
-                    ? Icons.lock_outline_rounded
-                    : Icons.chevron_right_rounded,
+                widget.playlist.trailingIcon,
                 size: 18,
                 color: colors.textTertiary,
               ),
@@ -510,7 +489,7 @@ class _PlaylistDetail extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      playlist.isRecent ? '自动歌单' : 'B 站收藏夹',
+                      playlist.badge,
                       style: AppTypography.overline.copyWith(
                         color: Colors.white.withValues(alpha: 0.8),
                       ),
@@ -584,9 +563,7 @@ class _PlaylistDetail extends StatelessWidget {
               borderRadius: AppRadius.mdAll,
             ),
             child: Text(
-              trackKeyword.isNotEmpty
-                  ? '没有找到匹配的歌曲'
-                  : (playlist.isRecent ? '还没有最近播放记录' : '这个歌单还没有内容'),
+              trackKeyword.isNotEmpty ? '没有找到匹配的歌曲' : playlist.emptyText,
               style: AppTypography.body.copyWith(color: colors.textSecondary),
             ),
           )
@@ -598,7 +575,7 @@ class _PlaylistDetail extends StatelessWidget {
               isCurrent: playback.track?.id == tracks[i].id,
               isPlaying:
                   playback.isPlaying && playback.track?.id == tracks[i].id,
-              liked: !playlist.isRecent,
+              liked: playlist.kind == _PlaylistKind.folder,
               onLike: onRemoveTrack == null
                   ? null
                   : () => onRemoveTrack!(tracks[i]),
@@ -609,13 +586,15 @@ class _PlaylistDetail extends StatelessWidget {
   }
 }
 
+enum _PlaylistKind { recent, downloads, folder }
+
 class _PlaylistViewData {
   const _PlaylistViewData({
     required this.id,
     required this.title,
     required this.subtitle,
     required this.gradientSeed,
-    required this.isRecent,
+    required this.kind,
     this.mediaId,
     this.coverUrl,
     this.intro,
@@ -628,7 +607,18 @@ class _PlaylistViewData {
       title: '最近播放',
       subtitle: '$count 首',
       gradientSeed: 12,
-      isRecent: true,
+      kind: _PlaylistKind.recent,
+    );
+  }
+
+  factory _PlaylistViewData.downloads(int count) {
+    return _PlaylistViewData(
+      id: 'downloads',
+      mediaId: libraryDownloadsPlaylistId,
+      title: '我的下载',
+      subtitle: '$count 首',
+      gradientSeed: 18,
+      kind: _PlaylistKind.downloads,
     );
   }
 
@@ -642,7 +632,7 @@ class _PlaylistViewData {
       coverUrl: folder.coverUrl,
       intro: folder.intro,
       isPrivate: !folder.isPublic,
-      isRecent: false,
+      kind: _PlaylistKind.folder,
     );
   }
 
@@ -651,8 +641,29 @@ class _PlaylistViewData {
   final String title;
   final String subtitle;
   final int gradientSeed;
+  final _PlaylistKind kind;
   final String? coverUrl;
   final String? intro;
   final bool isPrivate;
-  final bool isRecent;
+
+  String get badge => switch (kind) {
+    _PlaylistKind.recent => '自动歌单',
+    _PlaylistKind.downloads => '本地歌单',
+    _PlaylistKind.folder => 'B 站收藏夹',
+  };
+
+  String get emptyText => switch (kind) {
+    _PlaylistKind.recent => '还没有最近播放记录',
+    _PlaylistKind.downloads => '还没有已下载歌曲',
+    _PlaylistKind.folder => '这个歌单还没有内容',
+  };
+
+  IconData get trailingIcon {
+    if (isPrivate) return Icons.lock_outline_rounded;
+    return switch (kind) {
+      _PlaylistKind.recent => Icons.history_rounded,
+      _PlaylistKind.downloads => Icons.download_done_rounded,
+      _PlaylistKind.folder => Icons.chevron_right_rounded,
+    };
+  }
 }

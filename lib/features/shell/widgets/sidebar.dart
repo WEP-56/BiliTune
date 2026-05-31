@@ -23,6 +23,7 @@ class Sidebar extends ConsumerWidget {
         ? AppLayout.sidebarCollapsedWidth
         : AppLayout.sidebarWidth;
     final library = ref.watch(libraryProvider);
+    final downloads = ref.watch(downloadQueueProvider);
     final libraryNotifier = ref.read(libraryProvider.notifier);
     final folders = library.folders.isEmpty
         ? MockData.libraryFolders
@@ -93,6 +94,19 @@ class Sidebar extends ConsumerWidget {
                       navigationShell.currentIndex == 2,
                   onTap: () {
                     libraryNotifier.selectRecent();
+                    navigationShell.goBranch(2);
+                  },
+                ),
+                _PlaylistTile(
+                  title: '我的下载',
+                  subtitle: '${downloads.completedTasks.length} 首',
+                  seed: 18,
+                  collapsed: collapsed,
+                  selected:
+                      library.selectedFolderId == libraryDownloadsPlaylistId &&
+                      navigationShell.currentIndex == 2,
+                  onTap: () {
+                    libraryNotifier.selectDownloads();
                     navigationShell.goBranch(2);
                   },
                 ),

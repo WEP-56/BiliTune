@@ -21,6 +21,7 @@ import '../data/repositories/bili_music_repository.dart';
 import '../data/services/bili_api_service.dart';
 
 const _unset = Object();
+const int libraryDownloadsPlaylistId = -1;
 
 enum WindowCloseBehavior { minimize, tray, exit }
 
@@ -829,6 +830,10 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   Future<void> selectFolder(int mediaId) async {
+    if (mediaId == libraryDownloadsPlaylistId) {
+      selectDownloads();
+      return;
+    }
     state = state.copyWith(
       selectedFolderId: mediaId,
       trackKeyword: '',
@@ -857,11 +862,20 @@ class LibraryNotifier extends Notifier<LibraryState> {
     );
   }
 
+  void selectDownloads() {
+    state = state.copyWith(
+      selectedFolderId: libraryDownloadsPlaylistId,
+      selectedFolderTracks: const <Track>[],
+      trackKeyword: '',
+      errorMessage: null,
+    );
+  }
+
   Future<void> searchSelectedTracks(String keyword) async {
     final trimmed = keyword.trim();
     final mediaId = state.selectedFolderId;
 
-    if (mediaId == null) {
+    if (mediaId == null || mediaId == libraryDownloadsPlaylistId) {
       state = state.copyWith(trackKeyword: trimmed, errorMessage: null);
       return;
     }
@@ -968,6 +982,35 @@ class DownloadQueueState {
 
   int get completedCount =>
       tasks.where((task) => task.status == DownloadTaskStatus.completed).length;
+
+  List<DownloadTask> get completedTasks => tasks
+      .where(
+        (task) =>
+            task.status == DownloadTaskStatus.completed &&
+            task.savePath != null &&
+            task.savePath!.isNotEmpty,
+      )
+      .toList(growable: false);
+
+  List<Track> get downloadedTracks => completedTasks
+      .map(
+        (task) => Track(
+          id: 'download-${task.id}',
+          title: task.title,
+          artist: task.artist,
+          duration: Duration.zero,
+          type: task.type,
+          gradientSeed: task.gradientSeed,
+          coverUrl: task.coverUrl,
+          playCount: task.downloadedBytes,
+          bvid: task.bvid,
+          aid: task.aid,
+          cid: task.cid,
+          audioId: task.audioId,
+          sourceUrl: Uri.file(task.savePath!).toString(),
+        ),
+      )
+      .toList(growable: false);
 
   int get activeCount => tasks
       .where((task) => task.status == DownloadTaskStatus.downloading)
@@ -1547,7 +1590,10 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     for (final url in urls) {
       try {
         await player.open(
-          mk.Media(url, httpHeaders: _biliPlaybackHeaders),
+          mk.Media(
+            url,
+            httpHeaders: url.startsWith('file:') ? null : _biliPlaybackHeaders,
+          ),
           play: true,
         );
         return _sourceWithUrl(source, url);

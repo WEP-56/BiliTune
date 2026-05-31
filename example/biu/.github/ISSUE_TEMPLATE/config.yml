@@ -1,8 +1,0 @@
-# 禁用空白 Issue，强制用户必须选择一个模板
-blank_issues_enabled: false
-
-# (可选) 在 Issue 选择页面显示指向 Discussions 或文档的链接
-contact_links:
-  - name: 🤔 提问 / 讨论
-    url: https://github.com/YOUR_USER/YOUR_REPO/discussions
-    about: 如果这不是一个 Bug，请去讨论区提问。

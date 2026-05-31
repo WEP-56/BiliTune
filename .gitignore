@@ -1,88 +1,95 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
+# OS and editor noise
 .DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
+Thumbs.db
+desktop.ini
+*.swp
+*.tmp
+*.log
 
-# IntelliJ related
+# IDEs
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 *.iml
 *.ipr
 *.iws
-.idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# Local agent/workspace state
+/.claude/
+/.workbuddy/
+/.codex/
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Reference projects kept locally only
+/example/
+
+# Flutter and Dart generated files
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
+**/build/
 /coverage/
+**/coverage/
+**/doc/api/
+**/ios/Flutter/.last_build_id
 
-# Symbolication related
+# Flutter release symbol files
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# ───────────────────────────────────────────────────────────
-# BiliTune 仓库特定规则
-# ───────────────────────────────────────────────────────────
-
-# 构建/覆盖率产物(递归,覆盖 example 子项目 + windows 等)
-**/build/
+# Local distribution output
+/dist/
 **/dist/
-**/coverage/
-**/.turbo/
 
-# 本地配置与密钥(android/.gitignore 已覆盖 local.properties,这里再兜底)
-**/local.properties
+# Android generated/local files
+android/.gradle/
+android/local.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/app/*.apk
+android/app/*.aab
+android/app/*.jks
+android/app/*.keystore
 **/key.properties
-*.keystore
+**/local.properties
+
+# Signing keys and environment files
 *.jks
+*.keystore
+*.p12
+*.pem
+*.key
+.env
+.env.*
+!.env.example
 **/.env
 **/.env.*
 !**/.env.example
 
-# 参考子项目:Node / Electron / React Native (example/biu, example/BBPlayer)
+# Node / frontend reference-project leftovers
+node_modules/
 **/node_modules/
 **/.pnpm-store/
-**/.expo/
-**/Pods/
-**/.gradle/
+**/.turbo/
 *.tsbuildinfo
 
-# 参考子项目:Python (example/bilibili-api)
+# Native package manager leftovers
+**/Pods/
+
+# Python leftovers
+__pycache__/
 **/__pycache__/
+.venv/
+venv/
 **/.venv/
 **/venv/
 **/*.egg-info/
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
-
-# 操作系统/编辑器杂项
-Thumbs.db
-desktop.ini
-example
-.workbuddy
-.claude

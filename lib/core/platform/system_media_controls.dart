@@ -24,7 +24,7 @@ class SystemMediaControls extends audio.BaseAudioHandler {
         androidNotificationChannelId: 'com.wep56.bilitune.playback',
         androidNotificationChannelName: 'BiliTune 播放',
         androidNotificationChannelDescription: 'BiliTune 后台播放控制',
-        androidNotificationIcon: 'mipmap/ic_launcher',
+        androidNotificationIcon: 'drawable/ic_stat_bilitune',
         androidNotificationOngoing: true,
         androidStopForegroundOnPause: true,
         preloadArtwork: true,

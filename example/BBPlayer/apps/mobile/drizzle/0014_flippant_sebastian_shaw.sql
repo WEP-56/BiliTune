@@ -1,1 +1,0 @@
-DROP INDEX `playlist_tracks_playlist_idx`;

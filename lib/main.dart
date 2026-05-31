@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
+import 'core/platform/notification_permission.dart';
 import 'core/platform/system_media_controls.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   await SystemMediaControls.instance.initialize();
+  await NotificationPermission.requestIfNeeded();
 
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();

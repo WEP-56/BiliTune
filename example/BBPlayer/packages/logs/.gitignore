@@ -1,9 +1,0 @@
-node_modules
-coverage
-.vscode
-
-.DS_store
-.idea
-
-.yarn
-.pnp.*

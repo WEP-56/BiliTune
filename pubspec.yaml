@@ -45,6 +45,8 @@ dependencies:
   media_kit_libs_audio: ^1.0.7
   qr_flutter: ^4.1.0
   window_manager: ^0.5.1
+  tray_manager: 0.5.2
+  audio_service: 0.18.18
 
 dev_dependencies:
   flutter_test:
@@ -68,6 +70,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assest/logo.ico
+    - assest/logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

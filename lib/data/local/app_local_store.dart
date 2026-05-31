@@ -8,6 +8,7 @@ class AppLocalStore {
   AppLocalStore(this._prefs);
 
   static const _themeModeKey = 'settings.theme_mode';
+  static const _windowCloseBehaviorKey = 'settings.window_close_behavior';
   static const _searchHistoryKey = 'search.history';
   static const _downloadTasksKey = 'downloads.tasks';
 
@@ -17,6 +18,12 @@ class AppLocalStore {
 
   Future<void> saveThemeMode(String value) =>
       _prefs.setString(_themeModeKey, value);
+
+  Future<String?> readWindowCloseBehavior() =>
+      _prefs.getString(_windowCloseBehaviorKey);
+
+  Future<void> saveWindowCloseBehavior(String value) =>
+      _prefs.setString(_windowCloseBehaviorKey, value);
 
   Future<List<String>> readSearchHistory() async {
     final raw = await _prefs.getString(_searchHistoryKey);

@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/network/bili_cookie_store.dart';
 import '../core/network/bili_dio.dart';
 import '../core/network/bili_wbi_signer.dart';
+import '../core/platform/system_media_controls.dart';
 import '../data/local/app_local_store.dart';
 import '../data/mock/mock_data.dart';
 import '../data/models/models.dart';
@@ -20,6 +21,22 @@ import '../data/repositories/bili_music_repository.dart';
 import '../data/services/bili_api_service.dart';
 
 const _unset = Object();
+
+enum WindowCloseBehavior { minimize, tray, exit }
+
+extension WindowCloseBehaviorX on WindowCloseBehavior {
+  String get label => switch (this) {
+    WindowCloseBehavior.minimize => '最小化',
+    WindowCloseBehavior.tray => '到托盘',
+    WindowCloseBehavior.exit => '退出',
+  };
+
+  String get value => switch (this) {
+    WindowCloseBehavior.minimize => 'minimize',
+    WindowCloseBehavior.tray => 'tray',
+    WindowCloseBehavior.exit => 'exit',
+  };
+}
 
 final sharedPreferencesAsyncProvider = Provider<SharedPreferencesAsync>(
   (ref) => SharedPreferencesAsync(),
@@ -116,6 +133,47 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
 final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
   ThemeModeNotifier.new,
 );
+
+class WindowCloseBehaviorNotifier extends Notifier<WindowCloseBehavior> {
+  bool _hydrated = false;
+
+  @override
+  WindowCloseBehavior build() {
+    if (!_hydrated) {
+      _hydrated = true;
+      unawaited(_load());
+    }
+    return WindowCloseBehavior.tray;
+  }
+
+  Future<void> _load() async {
+    final value = await ref
+        .read(appLocalStoreProvider)
+        .readWindowCloseBehavior();
+    if (value == null) return;
+    state = _decode(value);
+  }
+
+  void set(WindowCloseBehavior behavior) {
+    state = behavior;
+    unawaited(
+      ref.read(appLocalStoreProvider).saveWindowCloseBehavior(behavior.value),
+    );
+  }
+
+  WindowCloseBehavior _decode(String value) {
+    return switch (value) {
+      'minimize' => WindowCloseBehavior.minimize,
+      'exit' => WindowCloseBehavior.exit,
+      _ => WindowCloseBehavior.tray,
+    };
+  }
+}
+
+final windowCloseBehaviorProvider =
+    NotifierProvider<WindowCloseBehaviorNotifier, WindowCloseBehavior>(
+      WindowCloseBehaviorNotifier.new,
+    );
 
 class SidebarCollapsedNotifier extends Notifier<bool> {
   @override
@@ -393,13 +451,18 @@ class SearchNotifier extends Notifier<SearchState> {
 
     try {
       final defaultKeyword = await repository.defaultSearchKeyword();
+      state = state.copyWith(defaultKeyword: defaultKeyword);
+    } catch (_) {
+      state = state.copyWith(defaultKeyword: null);
+    }
+
+    try {
       final hotWords = await repository.hotWords();
       state = state.copyWith(
-        defaultKeyword: defaultKeyword,
         hotWords: hotWords.take(12).toList(growable: false),
       );
     } catch (_) {
-      state = state.copyWith(defaultKeyword: null, hotWords: const <String>[]);
+      state = state.copyWith(hotWords: const <String>[]);
     }
   }
 
@@ -533,6 +596,7 @@ final searchProvider = NotifierProvider<SearchNotifier, SearchState>(
 class DiscoverState {
   const DiscoverState({
     this.featuredTrack,
+    this.featuredTracks = const <Track>[],
     this.featuredKeyword,
     this.quickPicks = const <String>[],
     this.shelves = const <Shelf>[],
@@ -541,6 +605,7 @@ class DiscoverState {
   });
 
   final Track? featuredTrack;
+  final List<Track> featuredTracks;
   final String? featuredKeyword;
   final List<String> quickPicks;
   final List<Shelf> shelves;
@@ -549,6 +614,7 @@ class DiscoverState {
 
   DiscoverState copyWith({
     Object? featuredTrack = _unset,
+    List<Track>? featuredTracks,
     Object? featuredKeyword = _unset,
     List<String>? quickPicks,
     List<Shelf>? shelves,
@@ -559,6 +625,7 @@ class DiscoverState {
       featuredTrack: identical(featuredTrack, _unset)
           ? this.featuredTrack
           : featuredTrack as Track?,
+      featuredTracks: featuredTracks ?? this.featuredTracks,
       featuredKeyword: identical(featuredKeyword, _unset)
           ? this.featuredKeyword
           : featuredKeyword as String?,
@@ -580,6 +647,7 @@ class DiscoverNotifier extends Notifier<DiscoverState> {
     if (!_bootstrapped && !_skipNetworkBootstrap) {
       _bootstrapped = true;
       unawaited(_bootstrap());
+      return const DiscoverState(isLoading: true);
     }
     return const DiscoverState();
   }
@@ -590,9 +658,13 @@ class DiscoverNotifier extends Notifier<DiscoverState> {
       final repository = ref.read(biliMusicRepositoryProvider);
       final local = ref.read(appLocalStoreProvider);
       final recentHistory = await local.readSearchHistory();
-      final featuredTrack =
-          await repository.musicFeaturedTrack() ??
-          await repository.discoverFeaturedTrack();
+      final musicFeaturedTracks = await repository.musicFeaturedTracks();
+      final fallbackFeaturedTrack = musicFeaturedTracks.isEmpty
+          ? await repository.discoverFeaturedTrack()
+          : null;
+      final featuredTrack = musicFeaturedTracks.isNotEmpty
+          ? musicFeaturedTracks.first
+          : fallbackFeaturedTrack;
       final musicShelves = await repository.musicShelves();
       final shelves = musicShelves.isNotEmpty
           ? musicShelves
@@ -602,6 +674,9 @@ class DiscoverNotifier extends Notifier<DiscoverState> {
       );
       state = state.copyWith(
         featuredTrack: featuredTrack,
+        featuredTracks: musicFeaturedTracks.isNotEmpty
+            ? musicFeaturedTracks
+            : [?fallbackFeaturedTrack],
         featuredKeyword: await repository.discoverFeaturedKeyword(),
         quickPicks: quickPicks,
         shelves: shelves,
@@ -629,6 +704,7 @@ class LibraryState {
     this.selectedFolderId,
     this.selectedFolderTracks = const <Track>[],
     this.recentHistory = const <Track>[],
+    this.trackKeyword = '',
     this.isLoading = false,
     this.errorMessage,
   });
@@ -637,6 +713,7 @@ class LibraryState {
   final int? selectedFolderId;
   final List<Track> selectedFolderTracks;
   final List<Track> recentHistory;
+  final String trackKeyword;
   final bool isLoading;
   final String? errorMessage;
 
@@ -651,6 +728,7 @@ class LibraryState {
     Object? selectedFolderId = _unset,
     List<Track>? selectedFolderTracks,
     List<Track>? recentHistory,
+    String? trackKeyword,
     bool? isLoading,
     Object? errorMessage = _unset,
   }) {
@@ -661,6 +739,7 @@ class LibraryState {
           : selectedFolderId as int?,
       selectedFolderTracks: selectedFolderTracks ?? this.selectedFolderTracks,
       recentHistory: recentHistory ?? this.recentHistory,
+      trackKeyword: trackKeyword ?? this.trackKeyword,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: identical(errorMessage, _unset)
           ? this.errorMessage
@@ -728,7 +807,11 @@ class LibraryNotifier extends Notifier<LibraryState> {
   }
 
   Future<void> selectFolder(int mediaId) async {
-    state = state.copyWith(selectedFolderId: mediaId, isLoading: true);
+    state = state.copyWith(
+      selectedFolderId: mediaId,
+      trackKeyword: '',
+      isLoading: true,
+    );
     try {
       final tracks = await ref
           .read(biliMusicRepositoryProvider)
@@ -747,8 +830,37 @@ class LibraryNotifier extends Notifier<LibraryState> {
     state = state.copyWith(
       selectedFolderId: null,
       selectedFolderTracks: const <Track>[],
+      trackKeyword: '',
       errorMessage: null,
     );
+  }
+
+  Future<void> searchSelectedTracks(String keyword) async {
+    final trimmed = keyword.trim();
+    final mediaId = state.selectedFolderId;
+
+    if (mediaId == null) {
+      state = state.copyWith(trackKeyword: trimmed, errorMessage: null);
+      return;
+    }
+
+    state = state.copyWith(
+      trackKeyword: trimmed,
+      isLoading: true,
+      errorMessage: null,
+    );
+
+    try {
+      final tracks = await ref
+          .read(biliMusicRepositoryProvider)
+          .favoriteFolderTracks(
+            mediaId,
+            keyword: trimmed.isEmpty ? null : trimmed,
+          );
+      state = state.copyWith(selectedFolderTracks: tracks, isLoading: false);
+    } catch (error) {
+      state = state.copyWith(isLoading: false, errorMessage: error.toString());
+    }
   }
 
   Future<void> refresh() async {
@@ -766,7 +878,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
-      await ref.read(biliMusicRepositoryProvider).createFavoriteFolder(
+      await ref
+          .read(biliMusicRepositoryProvider)
+          .createFavoriteFolder(
             title: trimmed,
             intro: intro.trim(),
             isPrivate: isPrivate,
@@ -780,10 +894,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
   Future<void> addTrackToFavoriteFolder(Track track, int mediaId) async {
     state = state.copyWith(errorMessage: null);
     try {
-      await ref.read(biliMusicRepositoryProvider).addTrackToFavoriteFolder(
-            track: track,
-            mediaId: mediaId,
-          );
+      await ref
+          .read(biliMusicRepositoryProvider)
+          .addTrackToFavoriteFolder(track: track, mediaId: mediaId);
       if (state.selectedFolderId == mediaId) {
         final tracks = await ref
             .read(biliMusicRepositoryProvider)
@@ -799,10 +912,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
   Future<void> removeTrackFromFavoriteFolder(Track track, int mediaId) async {
     state = state.copyWith(errorMessage: null);
     try {
-      await ref.read(biliMusicRepositoryProvider).removeTrackFromFavoriteFolder(
-            track: track,
-            mediaId: mediaId,
-          );
+      await ref
+          .read(biliMusicRepositoryProvider)
+          .removeTrackFromFavoriteFolder(track: track, mediaId: mediaId);
       if (state.selectedFolderId == mediaId) {
         final tracks = await ref
             .read(biliMusicRepositoryProvider)
@@ -1236,6 +1348,14 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
 
   @override
   PlaybackState build() {
+    listenSelf((_, next) => _syncSystemMedia(next));
+    SystemMediaControls.instance.bind(
+      onTogglePlay: togglePlay,
+      onNext: () async => next(),
+      onPrevious: () async => previous(),
+      onSeek: seek,
+    );
+
     _mockTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickMock());
     ref.onDispose(() {
       _mockTimer?.cancel();
@@ -1244,7 +1364,12 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       }
     });
 
-    return PlaybackState(track: MockData.nowPlaying, queue: MockData.tracks);
+    final initial = PlaybackState(
+      track: MockData.nowPlaying,
+      queue: MockData.tracks,
+    );
+    unawaited(Future<void>.microtask(() => _syncSystemMedia(initial)));
+    return initial;
   }
 
   mk.Player _ensurePlayer() {
@@ -1412,8 +1537,35 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
         track.aid != null ||
         track.audioId != null;
   }
+
+  void _syncSystemMedia(PlaybackState playback) {
+    SystemMediaControls.instance.sync(
+      track: playback.track,
+      queue: playback.queue,
+      isPlaying: playback.isPlaying,
+      position: playback.position,
+      duration: playback.duration,
+      shuffle: playback.shuffle,
+      repeatMode: playback.repeat.name,
+      errorMessage: playback.errorMessage,
+    );
+  }
 }
 
 final playbackProvider = NotifierProvider<PlaybackNotifier, PlaybackState>(
   PlaybackNotifier.new,
 );
+
+final nowPlayingLyricsProvider = FutureProvider<List<LyricLine>>((ref) async {
+  if (_skipNetworkBootstrap) return const <LyricLine>[];
+  final track = ref.watch(playbackProvider.select((state) => state.track));
+  if (track == null) return const <LyricLine>[];
+  return ref.read(biliMusicRepositoryProvider).trackLyrics(track);
+});
+
+final nowPlayingRelatedProvider = FutureProvider<List<Track>>((ref) async {
+  if (_skipNetworkBootstrap) return const <Track>[];
+  final track = ref.watch(playbackProvider.select((state) => state.track));
+  if (track == null) return const <Track>[];
+  return ref.read(biliMusicRepositoryProvider).relatedTracks(track);
+});

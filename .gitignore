@@ -83,3 +83,6 @@ app.*.map.json
 # 操作系统/编辑器杂项
 Thumbs.db
 desktop.ini
+example
+.workbuddy
+.claude

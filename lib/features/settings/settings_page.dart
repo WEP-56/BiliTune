@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +22,7 @@ class SettingsPage extends ConsumerWidget {
         ? AppSpacing.s6
         : AppSpacing.s4;
     final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
+    final closeBehavior = ref.watch(windowCloseBehaviorProvider);
     final auth = ref.watch(authProvider);
     final account = auth.account;
 
@@ -87,6 +89,18 @@ class SettingsPage extends ConsumerWidget {
             ),
           ],
         ),
+        if (Platform.isWindows)
+          _Section(
+            title: 'Windows',
+            children: [
+              _CloseBehaviorTile(
+                value: closeBehavior,
+                onChanged: (behavior) => ref
+                    .read(windowCloseBehaviorProvider.notifier)
+                    .set(behavior),
+              ),
+            ],
+          ),
         _Section(
           title: '账号',
           children: [
@@ -675,6 +689,47 @@ class _SwitchTile extends StatelessWidget {
       value: value,
       activeThumbColor: colors.brand,
       onChanged: onChanged,
+    );
+  }
+}
+
+class _CloseBehaviorTile extends StatelessWidget {
+  const _CloseBehaviorTile({required this.value, required this.onChanged});
+
+  final WindowCloseBehavior value;
+  final ValueChanged<WindowCloseBehavior> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ListTile(
+      leading: Icon(
+        Icons.close_fullscreen_rounded,
+        color: colors.textSecondary,
+      ),
+      title: Text(
+        '关闭窗口时',
+        style: AppTypography.body.copyWith(color: colors.textPrimary),
+      ),
+      subtitle: Text(
+        '控制点击右上角关闭按钮后的行为',
+        style: AppTypography.caption.copyWith(color: colors.textSecondary),
+      ),
+      trailing: DropdownButtonHideUnderline(
+        child: DropdownButton<WindowCloseBehavior>(
+          value: value,
+          dropdownColor: colors.bgElevated,
+          borderRadius: AppRadius.mdAll,
+          style: AppTypography.body.copyWith(color: colors.textPrimary),
+          items: [
+            for (final behavior in WindowCloseBehavior.values)
+              DropdownMenuItem(value: behavior, child: Text(behavior.label)),
+          ],
+          onChanged: (behavior) {
+            if (behavior != null) onChanged(behavior);
+          },
+        ),
+      ),
     );
   }
 }

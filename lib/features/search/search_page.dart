@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
+import '../../shared/widgets/favorite_folder_dialogs.dart';
 import '../../state/providers.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/track_row.dart';
@@ -155,6 +156,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
             TrackRow(
               index: i,
               track: displayItems[i],
+              onLike: () => showAddToFavoriteDialog(context, displayItems[i]),
               onTap: () => play.playTrack(displayItems[i], queue: displayItems),
             ),
           if (state.hasMore || state.isLoadingMore) ...[

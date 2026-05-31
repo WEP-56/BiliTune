@@ -4,13 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimens.dart';
 import '../../../core/theme/app_typography.dart';
-import '../../../data/mock/mock_data.dart';
 import '../../../data/models/models.dart';
-import '../../../state/providers.dart';
 import '../../../shared/widgets/cover_image.dart';
+import '../../../state/providers.dart';
 
-/// Desktop "Now Playing" right panel (design doc §6.4): cover + actions and a
-/// 歌词 / 队列 / 相关 tab switcher. Mock content for M0.
+/// Desktop right-side playback details: cover, actions, lyrics, queue, related.
 class NowPlayingPanel extends ConsumerStatefulWidget {
   const NowPlayingPanel({super.key});
 
@@ -20,15 +18,6 @@ class NowPlayingPanel extends ConsumerStatefulWidget {
 
 class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
   int _tab = 0;
-
-  static const _mockLyrics = <String>[
-    '夜的第七章 缓缓开始',
-    '是谁躲在斑驳的剪影里',
-    '月光下的歌声轻轻响起',
-    '你的旋律划过我心底',
-    '就让这首歌陪你到天明',
-    '所有的故事都有了结局',
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +41,6 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.s4,
@@ -99,7 +87,7 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        track?.title ?? '—',
+                        track?.title ?? '-',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.titleS.copyWith(
@@ -139,24 +127,67 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
           ),
           _TabBar(index: _tab, onChanged: (i) => setState(() => _tab = i)),
           const Divider(height: 1),
-          Expanded(child: _tabBody(playback, colors)),
+          Expanded(child: _tabBody(playback)),
         ],
       ),
     );
   }
 
-  Widget _tabBody(PlaybackState playback, BiliColors colors) {
+  Widget _tabBody(PlaybackState playback) {
     switch (_tab) {
       case 0:
+        return _LyricsPane(
+          lyrics: ref.watch(nowPlayingLyricsProvider),
+          position: playback.position,
+        );
+      case 1:
+        return _QueuePane(
+          playback: playback,
+          onPlay: (track) => ref
+              .read(playbackProvider.notifier)
+              .playTrack(track, queue: playback.queue),
+        );
+      default:
+        return _RelatedPane(
+          related: ref.watch(nowPlayingRelatedProvider),
+          onPlay: (track, queue) => ref
+              .read(playbackProvider.notifier)
+              .playTrack(track, queue: queue),
+        );
+    }
+  }
+}
+
+class _LyricsPane extends StatelessWidget {
+  const _LyricsPane({required this.lyrics, required this.position});
+
+  final AsyncValue<List<LyricLine>> lyrics;
+  final Duration position;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return lyrics.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, _) =>
+          const _PanelMessage(title: '未找到歌词', subtitle: '当前曲目暂时没有匹配到可用歌词。'),
+      data: (lines) {
+        if (lines.isEmpty) {
+          return const _PanelMessage(
+            title: '未找到歌词',
+            subtitle: '会优先用 B 站关联歌曲信息匹配 LRCLIB 歌词。',
+          );
+        }
+        final currentIndex = _currentLyricIndex(lines, position);
         return ListView.builder(
           padding: const EdgeInsets.all(AppSpacing.s4),
-          itemCount: _mockLyrics.length,
+          itemCount: lines.length,
           itemBuilder: (_, i) {
-            final current = i == 2;
+            final current = i == currentIndex;
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.s2),
               child: Text(
-                _mockLyrics[i],
+                lines[i].text,
                 style: (current ? AppTypography.titleS : AppTypography.body)
                     .copyWith(
                       color: current ? colors.brand : colors.textSecondary,
@@ -166,105 +197,237 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
             );
           },
         );
-      case 1:
-        final queue = playback.queue.isEmpty ? MockData.tracks : playback.queue;
-        return ListView(
+      },
+    );
+  }
+
+  int _currentLyricIndex(List<LyricLine> lines, Duration position) {
+    final timed = lines.any((line) => line.time > Duration.zero);
+    if (!timed) return -1;
+    var index = 0;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].time > position) break;
+      index = i;
+    }
+    return index;
+  }
+}
+
+class _QueuePane extends StatelessWidget {
+  const _QueuePane({required this.playback, required this.onPlay});
+
+  final PlaybackState playback;
+  final ValueChanged<Track> onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final queue = playback.queue;
+    if (queue.isEmpty) {
+      return const _PanelMessage(title: '队列为空', subtitle: '播放搜索结果或歌单后会形成队列。');
+    }
+
+    final currentIndex = queue.indexWhere(
+      (item) => item.id == playback.track?.id,
+    );
+    return ListView.builder(
+      padding: const EdgeInsets.all(AppSpacing.s3),
+      itemCount: queue.length + 1,
+      itemBuilder: (_, index) {
+        if (index == 0) {
+          final suffix = currentIndex < 0 ? '' : ' · 第 ${currentIndex + 1} 首';
+          return _PaneCaption('播放队列 · ${queue.length} 首$suffix');
+        }
+        final trackIndex = index - 1;
+        final track = queue[trackIndex];
+        return _TrackListTile(
+          track: track,
+          selected: track.id == playback.track?.id,
+          leadingText: '${trackIndex + 1}',
+          onTap: () => onPlay(track),
+        );
+      },
+    );
+  }
+}
+
+class _RelatedPane extends StatelessWidget {
+  const _RelatedPane({required this.related, required this.onPlay});
+
+  final AsyncValue<List<Track>> related;
+  final void Function(Track track, List<Track> queue) onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return related.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (_, _) =>
+          const _PanelMessage(title: '暂无相关推荐', subtitle: '当前曲目没有匹配到相似音乐内容。'),
+      data: (tracks) {
+        if (tracks.isEmpty) {
+          return const _PanelMessage(
+            title: '暂无相关推荐',
+            subtitle: '换一首带有明确标题和 UP 信息的音乐再试。',
+          );
+        }
+        return ListView.builder(
           padding: const EdgeInsets.all(AppSpacing.s3),
-          children: [
-            for (final t in queue.take(6))
-              ListTile(
-                dense: true,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.s2,
-                ),
-                leading: SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: CoverImage(gradientSeed: t.gradientSeed),
-                ),
-                title: Text(
-                  t.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.body.copyWith(color: colors.textPrimary),
-                ),
-                subtitle: Text(
-                  t.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTypography.caption.copyWith(
-                    color: colors.textSecondary,
+          itemCount: tracks.length + 1,
+          itemBuilder: (_, index) {
+            if (index == 0) return _PaneCaption('相关音乐 · ${tracks.length} 首');
+            final track = tracks[index - 1];
+            return _TrackListTile(
+              track: track,
+              onTap: () => onPlay(track, tracks),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _TrackListTile extends StatelessWidget {
+  const _TrackListTile({
+    required this.track,
+    this.selected = false,
+    this.leadingText,
+    this.onTap,
+  });
+
+  final Track track;
+  final bool selected;
+  final String? leadingText;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Material(
+      color: selected ? colors.bgHighlight : Colors.transparent,
+      borderRadius: AppRadius.smAll,
+      child: InkWell(
+        borderRadius: AppRadius.smAll,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s2,
+            vertical: AppSpacing.s2,
+          ),
+          child: Row(
+            children: [
+              if (leadingText != null) ...[
+                SizedBox(
+                  width: 22,
+                  child: Text(
+                    leadingText!,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.caption.copyWith(
+                      color: selected ? colors.brand : colors.textTertiary,
+                    ),
                   ),
                 ),
+                const SizedBox(width: AppSpacing.s2),
+              ],
+              SizedBox(
+                width: 40,
+                height: 40,
+                child: CoverImage(
+                  url: track.coverUrl,
+                  gradientSeed: track.gradientSeed,
+                ),
               ),
-          ],
-        );
-      default:
-        final related = playback.queue.isEmpty
-            ? MockData.shelves.first.items
-            : playback.queue
-                  .map(
-                    (track) => CardItem(
-                      id: track.id,
-                      title: track.title,
-                      subtitle: track.artist,
-                      gradientSeed: track.gradientSeed,
-                      coverUrl: track.coverUrl,
-                      type: track.type,
-                      duration: track.duration,
-                      playCount: track.playCount,
-                      bvid: track.bvid,
-                      aid: track.aid,
-                      cid: track.cid,
-                      audioId: track.audioId,
-                      artist: track.artist,
-                    ),
-                  )
-                  .toList(growable: false);
-        return ListView(
-          padding: const EdgeInsets.all(AppSpacing.s4),
-          children: [
-            for (final c in related.take(4))
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.s3),
-                child: Row(
+              const SizedBox(width: AppSpacing.s3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: CoverImage(gradientSeed: c.gradientSeed),
+                    Text(
+                      track.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.body.copyWith(
+                        color: selected ? colors.brand : colors.textPrimary,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w400,
+                      ),
                     ),
-                    const SizedBox(width: AppSpacing.s3),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            c.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.body.copyWith(
-                              color: colors.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            c.subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.caption.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      track.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.caption.copyWith(
+                        color: colors.textSecondary,
                       ),
                     ),
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PaneCaption extends StatelessWidget {
+  const _PaneCaption(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s2,
+        AppSpacing.s1,
+        AppSpacing.s2,
+        AppSpacing.s3,
+      ),
+      child: Text(
+        text,
+        style: AppTypography.caption.copyWith(
+          color: context.colors.textTertiary,
+        ),
+      ),
+    );
+  }
+}
+
+class _PanelMessage extends StatelessWidget {
+  const _PanelMessage({required this.title, required this.subtitle});
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.s6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: AppTypography.titleS.copyWith(color: colors.textPrimary),
+            ),
+            const SizedBox(height: AppSpacing.s2),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: AppTypography.caption.copyWith(
+                color: colors.textSecondary,
+              ),
+            ),
           ],
-        );
-    }
+        ),
+      ),
+    );
   }
 }
 

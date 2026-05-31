@@ -49,7 +49,8 @@ class BiliApiService {
 
   Future<Object?> hotWords() async {
     final response = await _get(BiliApiEndpoints.hotWords);
-    return _json(response)['data'];
+    final body = _json(response);
+    return body['data'] ?? body['list'] ?? body['result'] ?? body;
   }
 
   Future<Object?> suggestions(String keyword) async {
@@ -116,6 +117,52 @@ class BiliApiService {
     };
     final response = await _get(BiliApiEndpoints.videoView, query: query);
     return _checkedData(response);
+  }
+
+  Future<Map<String, dynamic>> playerV2({
+    String? bvid,
+    int? aid,
+    required int cid,
+  }) async {
+    final query = <String, dynamic>{
+      ...?(bvid == null ? null : <String, dynamic>{'bvid': bvid}),
+      ...?(aid == null ? null : <String, dynamic>{'aid': aid}),
+      'cid': cid,
+    };
+    final response = await _get(
+      BiliApiEndpoints.playerV2,
+      wbi: true,
+      query: query,
+    );
+    return _checkedData(response);
+  }
+
+  Future<List<Map<String, dynamic>>> lrclibLyrics({
+    required String trackName,
+    String? artistName,
+    int? durationSeconds,
+  }) async {
+    final query = <String, dynamic>{
+      'track_name': trackName,
+      if (artistName != null && artistName.isNotEmpty)
+        'artist_name': artistName,
+      if (durationSeconds != null && durationSeconds > 0)
+        'duration': durationSeconds,
+    };
+    final response = await _dio.getUri(
+      Uri.https('lrclib.net', '/api/search', _stringQuery(query)),
+      options: Options(
+        sendTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ),
+    );
+    if (response.data is List) {
+      return (response.data as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(growable: false);
+    }
+    return const <Map<String, dynamic>>[];
   }
 
   Future<Map<String, dynamic>> videoPlayUrl({
@@ -358,7 +405,7 @@ class BiliApiService {
 
     return _dio.postUri(
       uri,
-      data: FormData.fromMap(form),
+      data: form,
       options: Options(contentType: Headers.formUrlEncodedContentType),
     );
   }

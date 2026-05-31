@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dimens.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/mock/mock_data.dart';
+import '../../../data/models/models.dart';
 import '../../../state/providers.dart';
 
 class Sidebar extends ConsumerWidget {
@@ -22,6 +23,7 @@ class Sidebar extends ConsumerWidget {
         ? AppLayout.sidebarCollapsedWidth
         : AppLayout.sidebarWidth;
     final library = ref.watch(libraryProvider);
+    final libraryNotifier = ref.read(libraryProvider.notifier);
     final folders = library.folders.isEmpty
         ? MockData.libraryFolders
         : library.folders
@@ -43,17 +45,18 @@ class Sidebar extends ConsumerWidget {
           _Header(collapsed: collapsed),
           const SizedBox(height: AppSpacing.s4),
           for (int i = 0; i < navDestinations.length; i++)
-            _NavTile(
-              icon: navDestinations[i].icon,
-              selectedIcon: navDestinations[i].selectedIcon,
-              label: navDestinations[i].label,
-              collapsed: collapsed,
-              selected: navigationShell.currentIndex == i,
-              onTap: () => navigationShell.goBranch(
-                i,
-                initialLocation: i == navigationShell.currentIndex,
+            if (navDestinations[i].route != '/library')
+              _NavTile(
+                icon: navDestinations[i].icon,
+                selectedIcon: navDestinations[i].selectedIcon,
+                label: navDestinations[i].label,
+                collapsed: collapsed,
+                selected: navigationShell.currentIndex == i,
+                onTap: () => navigationShell.goBranch(
+                  i,
+                  initialLocation: i == navigationShell.currentIndex,
+                ),
               ),
-            ),
           const Padding(
             padding: EdgeInsets.symmetric(
               horizontal: AppSpacing.s2,
@@ -80,12 +83,35 @@ class Sidebar extends ConsumerWidget {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
+                _PlaylistTile(
+                  title: '最近播放',
+                  subtitle: '${library.recentHistory.length} 首',
+                  seed: 12,
+                  collapsed: collapsed,
+                  selected:
+                      library.selectedFolderId == null &&
+                      navigationShell.currentIndex == 2,
+                  onTap: () {
+                    libraryNotifier.selectRecent();
+                    navigationShell.goBranch(2);
+                  },
+                ),
                 for (final folder in folders)
                   _PlaylistTile(
                     title: folder.title,
                     subtitle: folder.subtitle,
                     seed: folder.gradientSeed,
                     collapsed: collapsed,
+                    selected:
+                        _folderId(folder) == library.selectedFolderId &&
+                        navigationShell.currentIndex == 2,
+                    onTap: () {
+                      final id = _folderId(folder);
+                      if (id != null) {
+                        libraryNotifier.selectFolder(id);
+                      }
+                      navigationShell.goBranch(2);
+                    },
                   ),
               ],
             ),
@@ -104,6 +130,8 @@ class Sidebar extends ConsumerWidget {
       ),
     );
   }
+
+  int? _folderId(CardItem folder) => int.tryParse(folder.id);
 }
 
 class _Header extends ConsumerWidget {
@@ -225,12 +253,16 @@ class _PlaylistTile extends StatefulWidget {
     required this.subtitle,
     required this.seed,
     required this.collapsed,
+    required this.selected,
+    required this.onTap,
   });
 
   final String title;
   final String subtitle;
   final int seed;
   final bool collapsed;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   State<_PlaylistTile> createState() => _PlaylistTileState();
@@ -250,63 +282,71 @@ class _PlaylistTileState extends State<_PlaylistTile> {
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 2),
-        padding: const EdgeInsets.all(AppSpacing.s2),
-        decoration: BoxDecoration(
-          color: _hover ? colors.bgHighlight : Colors.transparent,
-          borderRadius: AppRadius.smAll,
-        ),
-        child: Row(
-          mainAxisAlignment: widget.collapsed
-              ? MainAxisAlignment.center
-              : MainAxisAlignment.start,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                borderRadius: AppRadius.smAll,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [c1, c2],
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.all(AppSpacing.s2),
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? colors.bgActive
+                : (_hover ? colors.bgHighlight : Colors.transparent),
+            borderRadius: AppRadius.smAll,
+          ),
+          child: Row(
+            mainAxisAlignment: widget.collapsed
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  borderRadius: AppRadius.smAll,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [c1, c2],
+                  ),
+                ),
+                child: Icon(
+                  Icons.queue_music_rounded,
+                  size: 18,
+                  color: colors.onBrand.withValues(alpha: 0.6),
                 ),
               ),
-              child: Icon(
-                Icons.queue_music_rounded,
-                size: 18,
-                color: colors.onBrand.withValues(alpha: 0.6),
-              ),
-            ),
-            if (!widget.collapsed) ...[
-              const SizedBox(width: AppSpacing.s3),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      widget.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.body.copyWith(
-                        color: colors.textPrimary,
+              if (!widget.collapsed) ...[
+                const SizedBox(width: AppSpacing.s3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.body.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: widget.selected
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                        ),
                       ),
-                    ),
-                    Text(
-                      widget.subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTypography.caption.copyWith(
-                        color: colors.textSecondary,
+                      Text(
+                        widget.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.caption.copyWith(
+                          color: colors.textSecondary,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

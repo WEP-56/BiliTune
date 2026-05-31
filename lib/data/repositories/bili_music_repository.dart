@@ -15,15 +15,26 @@ class BiliMusicRepository {
   Future<List<String>> hotWords() async {
     final payload = await _api.hotWords();
     final list = _extractList(payload);
-    return list
+    final words = list
         .map((item) {
           final map = _asMap(item);
           return map['keyword']?.toString() ??
               map['show_name']?.toString() ??
-              map['name']?.toString();
+              map['name']?.toString() ??
+              map['word']?.toString() ??
+              item?.toString();
         })
         .whereType<String>()
         .where((word) => word.isNotEmpty)
+        .toList(growable: false);
+    if (words.isNotEmpty) return words;
+
+    final map = _asMap(payload);
+    return map.values
+        .map((item) => item?.toString())
+        .whereType<String>()
+        .where((word) => word.isNotEmpty)
+        .take(12)
         .toList(growable: false);
   }
 
@@ -124,25 +135,64 @@ class BiliMusicRepository {
   }
 
   Future<Track?> musicFeaturedTrack() async {
-    for (final zone in _musicZones) {
+    final tracks = await musicFeaturedTracks(limit: 1);
+    if (tracks.isNotEmpty) return tracks.first;
+    return null;
+  }
+
+  Future<List<Track>> musicFeaturedTracks({int limit = 5}) async {
+    if (limit <= 0) return const <Track>[];
+
+    final tracks = <Track>[];
+    final seen = <String>{};
+
+    void addTrack(Track track) {
+      final key = _trackKey(track);
+      if (seen.add(key)) tracks.add(track);
+    }
+
+    for (final zone in _musicRankingZones) {
       try {
         final items = await _api.rankingVideos(rid: zone.rid, type: zone.type);
-        if (items.isNotEmpty) return _trackFromRankingVideo(items.first);
+        for (final item in items.take(3)) {
+          addTrack(_trackFromRankingVideo(item));
+          if (tracks.length >= limit) return tracks;
+        }
       } catch (_) {}
     }
 
     try {
       final items = await _api.rankingVideos(rid: _musicRootRid);
-      if (items.isNotEmpty) return _trackFromRankingVideo(items.first);
+      for (final item in items) {
+        addTrack(_trackFromRankingVideo(item));
+        if (tracks.length >= limit) return tracks;
+      }
     } catch (_) {}
 
-    return null;
+    try {
+      final items = await _api.popularVideos(pageSize: limit);
+      for (final item in items.where(_isMusicSearchItem)) {
+        addTrack(_trackFromSearchVideo(item));
+        if (tracks.length >= limit) return tracks;
+      }
+    } catch (_) {}
+
+    try {
+      final items = await _api.homepageRecommend(pageSize: limit);
+      for (final item in items) {
+        addTrack(_trackFromHomeFeed(item));
+        if (tracks.length >= limit) return tracks;
+      }
+    } catch (_) {}
+
+    return tracks;
   }
 
   Future<List<Shelf>> musicShelves() async {
     final shelves = <Shelf>[];
 
-    for (final zone in _musicZones) {
+    for (final zone in _musicRankingZones) {
+      if (shelves.length >= _maxMusicShelfCount) break;
       try {
         final items = await _api.rankingVideos(rid: zone.rid, type: zone.type);
         if (items.isNotEmpty) {
@@ -155,6 +205,26 @@ class BiliMusicRepository {
                   .toList(growable: false),
             ),
           );
+          continue;
+        }
+      } catch (_) {}
+
+      if (zone.searchKeyword == null || shelves.length >= _maxMusicShelfCount) {
+        continue;
+      }
+
+      try {
+        final items = await _api.searchVideos(
+          zone.searchKeyword!,
+          pageSize: 8,
+          tid: zone.searchTid,
+        );
+        final cards = items
+            .map(_cardFromPopularVideo)
+            .take(8)
+            .toList(growable: false);
+        if (cards.isNotEmpty) {
+          shelves.add(Shelf(title: zone.title, items: cards));
         }
       } catch (_) {}
     }
@@ -204,7 +274,11 @@ class BiliMusicRepository {
     if (aid == null) {
       throw StateError('当前内容没有可收藏的 av 号。');
     }
-    await _api.dealFavoriteResource(aid: aid, addMediaIds: [mediaId], delMediaIds: const <int>[]);
+    await _api.dealFavoriteResource(
+      aid: aid,
+      addMediaIds: [mediaId],
+      delMediaIds: const <int>[],
+    );
   }
 
   Future<void> removeTrackFromFavoriteFolder({
@@ -323,6 +397,41 @@ class BiliMusicRepository {
     return tracks.take(pageSize).toList(growable: false);
   }
 
+  Future<List<LyricLine>> trackLyrics(Track track) async {
+    final metadata = await _lyricMetadata(track);
+    final title = metadata.title.trim();
+    if (title.isEmpty) return const <LyricLine>[];
+
+    final items = await _api.lrclibLyrics(
+      trackName: title,
+      artistName: metadata.artist,
+      durationSeconds: metadata.duration.inSeconds > 0
+          ? metadata.duration.inSeconds
+          : null,
+    );
+    if (items.isEmpty && metadata.artist != null) {
+      final fallbackItems = await _api.lrclibLyrics(trackName: title);
+      return _lyricsFromLrclib(fallbackItems);
+    }
+    return _lyricsFromLrclib(items);
+  }
+
+  Future<List<Track>> relatedTracks(Track track, {int limit = 12}) async {
+    final title = _searchableTitle(track.title);
+    final keyword = [
+      if (title.isNotEmpty) title,
+      if (track.artist.isNotEmpty) track.artist,
+    ].join(' ').trim();
+    if (keyword.isEmpty) return const <Track>[];
+
+    final results = await searchMusicTracks(keyword, pageSize: limit + 4);
+    final currentKey = _trackKey(track);
+    return results
+        .where((item) => _trackKey(item) != currentKey)
+        .take(limit)
+        .toList(growable: false);
+  }
+
   Future<Track> trackFromBvid(String bvid) async {
     final data = await _api.videoView(bvid: bvid);
     return _trackFromVideoView(data);
@@ -390,6 +499,47 @@ class BiliMusicRepository {
       artist: track.artist,
       coverUrl: track.coverUrl ?? hydrated.coverUrl,
       playCount: track.playCount,
+    );
+  }
+
+  Future<_LyricMetadata> _lyricMetadata(Track track) async {
+    var candidate = track;
+    if ((candidate.bvid != null || candidate.aid != null) &&
+        candidate.cid == null) {
+      try {
+        candidate = await _hydrateVideoTrack(track);
+      } catch (_) {}
+    }
+
+    final bvid = candidate.bvid;
+    final aid = candidate.aid;
+    final cid = candidate.cid;
+    if ((bvid != null || aid != null) && cid != null) {
+      try {
+        final data = await _api.playerV2(bvid: bvid, aid: aid, cid: cid);
+        final bgmInfo = _asMap(data['bgm_info'] ?? data['bgminfo']);
+        final bgmTitle =
+            bgmInfo['title']?.toString() ??
+            bgmInfo['name']?.toString() ??
+            bgmInfo['song_name']?.toString();
+        final bgmArtist =
+            bgmInfo['author']?.toString() ??
+            bgmInfo['artist']?.toString() ??
+            bgmInfo['singer']?.toString();
+        if (bgmTitle != null && bgmTitle.trim().isNotEmpty) {
+          return _LyricMetadata(
+            title: _searchableTitle(bgmTitle),
+            artist: _cleanArtist(bgmArtist ?? candidate.artist),
+            duration: candidate.duration,
+          );
+        }
+      } catch (_) {}
+    }
+
+    return _LyricMetadata(
+      title: _searchableTitle(candidate.title),
+      artist: _cleanArtist(candidate.artist),
+      duration: candidate.duration,
     );
   }
 
@@ -742,10 +892,87 @@ class BiliMusicRepository {
     final seen = <String>{};
     final merged = <Track>[];
     for (final track in tracks) {
-      final key = track.bvid ?? track.aid?.toString() ?? track.id;
+      final key = _trackKey(track);
       if (seen.add(key)) merged.add(track);
     }
     return merged;
+  }
+
+  String _trackKey(Track track) =>
+      track.bvid ??
+      track.aid?.toString() ??
+      track.audioId?.toString() ??
+      track.id;
+
+  List<LyricLine> _lyricsFromLrclib(List<Map<String, dynamic>> items) {
+    if (items.isEmpty) return const <LyricLine>[];
+    final item = items.firstWhere(
+      (item) => (item['syncedLyrics']?.toString().trim().isNotEmpty ?? false),
+      orElse: () => items.first,
+    );
+    final synced = item['syncedLyrics']?.toString();
+    if (synced != null && synced.trim().isNotEmpty) {
+      final parsed = _parseLrc(synced);
+      if (parsed.isNotEmpty) return parsed;
+    }
+
+    final plain = item['plainLyrics']?.toString();
+    if (plain == null || plain.trim().isEmpty) return const <LyricLine>[];
+    return plain
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .map((line) => LyricLine(time: Duration.zero, text: line))
+        .toList(growable: false);
+  }
+
+  List<LyricLine> _parseLrc(String raw) {
+    final lines = <LyricLine>[];
+    final pattern = RegExp(r'\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]');
+    for (final rawLine in raw.split(RegExp(r'\r?\n'))) {
+      final matches = pattern.allMatches(rawLine).toList();
+      if (matches.isEmpty) continue;
+      final text = rawLine.replaceAll(pattern, '').trim();
+      if (text.isEmpty) continue;
+      for (final match in matches) {
+        final minutes = int.tryParse(match.group(1) ?? '') ?? 0;
+        final seconds = int.tryParse(match.group(2) ?? '') ?? 0;
+        final fraction = match.group(3) ?? '0';
+        final milliseconds = switch (fraction.length) {
+          1 => (int.tryParse(fraction) ?? 0) * 100,
+          2 => (int.tryParse(fraction) ?? 0) * 10,
+          _ => int.tryParse(fraction.padRight(3, '0').substring(0, 3)) ?? 0,
+        };
+        lines.add(
+          LyricLine(
+            time: Duration(
+              minutes: minutes,
+              seconds: seconds,
+              milliseconds: milliseconds,
+            ),
+            text: text,
+          ),
+        );
+      }
+    }
+    lines.sort((a, b) => a.time.compareTo(b.time));
+    return lines;
+  }
+
+  String _searchableTitle(String value) {
+    return _stripHtml(value)
+        .replaceAll(RegExp(r'【[^】]*】'), ' ')
+        .replaceAll(RegExp(r'\[[^\]]*\]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String? _cleanArtist(String? value) {
+    final cleaned = value
+        ?.replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'[,/&、].*'), '')
+        .trim();
+    return cleaned == null || cleaned.isEmpty ? null : cleaned;
   }
 
   String? _normalizeImageUrl(String? url) {
@@ -836,6 +1063,8 @@ const _audioQualitySort = <int>[
 ];
 
 const _musicRootRid = 3;
+const _musicRankRid = 1003;
+const _maxMusicShelfCount = 6;
 
 const _musicSearchTypeIds = <int>{
   3,
@@ -867,19 +1096,40 @@ const _musicSearchKeywords = <String>{
   '音乐现场',
 };
 
-const _musicZones = <_MusicZone>[
-  _MusicZone('原创音乐', 28),
-  _MusicZone('翻唱', 31),
-  _MusicZone('VOCALOID·UTAU', 30),
-  _MusicZone('演奏', 59),
-  _MusicZone('MV', 193),
-  _MusicZone('音乐现场', 29),
+const _musicRankingZones = <_MusicZone>[
+  _MusicZone('全站音乐榜', _musicRankRid),
+  _MusicZone('音乐区总榜', _musicRootRid),
+  _MusicZone('原创音乐', 28, searchKeyword: '原创音乐'),
+  _MusicZone('翻唱', 31, searchKeyword: '翻唱'),
+  _MusicZone('VOCALOID·UTAU', 30, searchKeyword: 'VOCALOID UTAU'),
+  _MusicZone('演奏', 59, searchKeyword: '演奏'),
+  _MusicZone('MV', 193, searchKeyword: 'MV'),
+  _MusicZone('音乐现场', 29, searchKeyword: '音乐现场'),
+  _MusicZone('乐评盘点', 243),
+  _MusicZone('音乐教学', 244),
+  _MusicZone('AI音乐', 265),
+  _MusicZone('音乐综合', 130),
 ];
 
 class _MusicZone {
-  const _MusicZone(this.title, this.rid) : type = 'all';
+  const _MusicZone(this.title, this.rid, {this.searchKeyword}) : type = 'all';
 
   final String title;
   final int rid;
   final String type;
+  final String? searchKeyword;
+
+  int get searchTid => rid == _musicRankRid ? _musicRootRid : rid;
+}
+
+class _LyricMetadata {
+  const _LyricMetadata({
+    required this.title,
+    required this.artist,
+    required this.duration,
+  });
+
+  final String title;
+  final String? artist;
+  final Duration duration;
 }

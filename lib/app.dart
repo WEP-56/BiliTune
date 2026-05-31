@@ -22,6 +22,7 @@ class BiliTuneApp extends ConsumerStatefulWidget {
 class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
     with WindowListener, TrayListener {
   bool _windowsControlsReady = false;
+  _TrayMenuSnapshot? _lastTrayMenuSnapshot;
 
   @override
   void initState() {
@@ -75,6 +76,15 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
     if (!_windowsControlsReady) return;
     final track = playback.track;
     final title = track?.title ?? 'BiliTune';
+    final snapshot = _TrayMenuSnapshot(
+      trackId: track?.id,
+      title: title,
+      artist: track?.artist,
+      isPlaying: playback.isPlaying,
+    );
+    if (snapshot == _lastTrayMenuSnapshot) return;
+    _lastTrayMenuSnapshot = snapshot;
+
     await trayManager.setToolTip(
       track == null ? 'BiliTune' : '$title - ${track.artist}',
     );
@@ -156,4 +166,30 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
   void onTrayIconRightMouseDown() {
     unawaited(trayManager.popUpContextMenu());
   }
+}
+
+class _TrayMenuSnapshot {
+  const _TrayMenuSnapshot({
+    required this.trackId,
+    required this.title,
+    required this.artist,
+    required this.isPlaying,
+  });
+
+  final String? trackId;
+  final String title;
+  final String? artist;
+  final bool isPlaying;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _TrayMenuSnapshot &&
+        other.trackId == trackId &&
+        other.title == title &&
+        other.artist == artist &&
+        other.isPlaying == isPlaying;
+  }
+
+  @override
+  int get hashCode => Object.hash(trackId, title, artist, isPlaying);
 }

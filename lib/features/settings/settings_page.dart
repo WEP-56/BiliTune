@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/platform/windows_hotkeys.dart';
 import '../../data/repositories/bili_auth_repository.dart';
 import '../../state/providers.dart';
 
@@ -93,12 +94,31 @@ class SettingsPage extends ConsumerWidget {
           _Section(
             title: 'Windows',
             children: [
+              const _SectionNote(text: '全局快捷键默认不绑定，需手动录制后才会在后台生效。'),
               _CloseBehaviorTile(
                 value: closeBehavior,
                 onChanged: (behavior) => ref
                     .read(windowCloseBehaviorProvider.notifier)
                     .set(behavior),
               ),
+              for (final action in windowsHotkeyActions)
+                _WindowsHotkeyTile(
+                  action: action,
+                  binding: _bindingFor(
+                    ref.watch(windowsHotkeysProvider),
+                    action,
+                  ),
+                  onRecord: () async {
+                    final binding = await _recordWindowsHotkey(context, action);
+                    if (binding == null) return;
+                    await ref
+                        .read(windowsHotkeysProvider.notifier)
+                        .setBinding(binding);
+                  },
+                  onClear: () => ref
+                      .read(windowsHotkeysProvider.notifier)
+                      .clearBinding(action),
+                ),
             ],
           ),
         _Section(
@@ -147,6 +167,26 @@ class SettingsPage extends ConsumerWidget {
 
 void showAccountDialog(BuildContext context) {
   showDialog<void>(context: context, builder: (_) => const AccountDialog());
+}
+
+WindowsHotkeyBinding? _bindingFor(
+  List<WindowsHotkeyBinding> bindings,
+  WindowsHotkeyAction action,
+) {
+  for (final binding in bindings) {
+    if (binding.action == action) return binding;
+  }
+  return null;
+}
+
+Future<WindowsHotkeyBinding?> _recordWindowsHotkey(
+  BuildContext context,
+  WindowsHotkeyAction action,
+) {
+  return showDialog<WindowsHotkeyBinding>(
+    context: context,
+    builder: (_) => _WindowsHotkeyRecordDialog(action: action),
+  );
 }
 
 class AccountDialog extends ConsumerWidget {
@@ -731,5 +771,234 @@ class _CloseBehaviorTile extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _SectionNote extends StatelessWidget {
+  const _SectionNote({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.s4,
+        AppSpacing.s3,
+        AppSpacing.s4,
+        AppSpacing.s1,
+      ),
+      child: Text(
+        text,
+        style: AppTypography.caption.copyWith(color: colors.textSecondary),
+      ),
+    );
+  }
+}
+
+class _WindowsHotkeyTile extends StatelessWidget {
+  const _WindowsHotkeyTile({
+    required this.action,
+    required this.binding,
+    required this.onRecord,
+    required this.onClear,
+  });
+
+  final WindowsHotkeyAction action;
+  final WindowsHotkeyBinding? binding;
+  final VoidCallback onRecord;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ListTile(
+      leading: Icon(_iconFor(action), color: colors.textSecondary),
+      title: Text(
+        action.label,
+        style: AppTypography.body.copyWith(color: colors.textPrimary),
+      ),
+      subtitle: Text(
+        action.description,
+        style: AppTypography.caption.copyWith(color: colors.textSecondary),
+      ),
+      trailing: SizedBox(
+        width: 240,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                binding?.displayLabel ?? '未设置',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.caption.copyWith(
+                  color: binding == null
+                      ? colors.textTertiary
+                      : colors.textPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s1),
+            Tooltip(
+              message: '录制快捷键',
+              child: IconButton(
+                icon: const Icon(Icons.keyboard_alt_outlined),
+                color: colors.textSecondary,
+                visualDensity: VisualDensity.compact,
+                onPressed: onRecord,
+              ),
+            ),
+            Tooltip(
+              message: '清除绑定',
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded),
+                color: colors.textSecondary,
+                visualDensity: VisualDensity.compact,
+                onPressed: binding == null ? null : onClear,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _iconFor(WindowsHotkeyAction action) {
+  return switch (action) {
+    WindowsHotkeyAction.playPause => Icons.play_circle_outline_rounded,
+    WindowsHotkeyAction.previousTrack => Icons.skip_previous_rounded,
+    WindowsHotkeyAction.nextTrack => Icons.skip_next_rounded,
+    WindowsHotkeyAction.toggleWindow => Icons.window_rounded,
+  };
+}
+
+class _WindowsHotkeyRecordDialog extends StatefulWidget {
+  const _WindowsHotkeyRecordDialog({required this.action});
+
+  final WindowsHotkeyAction action;
+
+  @override
+  State<_WindowsHotkeyRecordDialog> createState() =>
+      _WindowsHotkeyRecordDialogState();
+}
+
+class _WindowsHotkeyRecordDialogState
+    extends State<_WindowsHotkeyRecordDialog> {
+  final _focusNode = FocusNode();
+  WindowsHotkeyBinding? _binding;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Dialog(
+      backgroundColor: colors.bgElevated,
+      child: KeyboardListener(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _handleKeyEvent,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.s5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      widget.action.label,
+                      style: AppTypography.titleM.copyWith(
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: colors.textSecondary,
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.s3),
+                Text(
+                  '按下你想要的组合键，录制完成后点保存。',
+                  style: AppTypography.body.copyWith(
+                    color: colors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.s4,
+                    vertical: AppSpacing.s4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.bgHighlight,
+                    borderRadius: AppRadius.mdAll,
+                  ),
+                  child: Text(
+                    _binding?.displayLabel ?? '等待录制...',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.titleS.copyWith(
+                      color: _binding == null
+                          ? colors.textTertiary
+                          : colors.textPrimary,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('取消'),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.s3),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _binding == null
+                            ? null
+                            : () => Navigator.of(context).pop(_binding),
+                        child: const Text('保存'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _handleKeyEvent(KeyEvent event) {
+    final binding = windowsHotkeyFromKeyEvent(widget.action, event);
+    if (binding == null) return;
+    setState(() => _binding = binding);
   }
 }

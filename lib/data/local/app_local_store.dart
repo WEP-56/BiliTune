@@ -9,8 +9,10 @@ class AppLocalStore {
 
   static const _themeModeKey = 'settings.theme_mode';
   static const _windowCloseBehaviorKey = 'settings.window_close_behavior';
+  static const _playbackStateKey = 'playback.state';
   static const _searchHistoryKey = 'search.history';
   static const _downloadTasksKey = 'downloads.tasks';
+  static const _windowsHotkeysKey = 'settings.windows_hotkeys';
 
   final SharedPreferencesAsync _prefs;
 
@@ -24,6 +26,23 @@ class AppLocalStore {
 
   Future<void> saveWindowCloseBehavior(String value) =>
       _prefs.setString(_windowCloseBehaviorKey, value);
+
+  Future<Map<String, dynamic>?> readPlaybackState() async {
+    final raw = await _prefs.getString(_playbackStateKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {
+      await _prefs.remove(_playbackStateKey);
+    }
+    return null;
+  }
+
+  Future<void> savePlaybackState(Map<String, dynamic> value) =>
+      _prefs.setString(_playbackStateKey, jsonEncode(value));
 
   Future<List<String>> readSearchHistory() async {
     final raw = await _prefs.getString(_searchHistoryKey);
@@ -59,4 +78,24 @@ class AppLocalStore {
     _downloadTasksKey,
     jsonEncode(tasks.map((task) => task.toJson()).toList(growable: false)),
   );
+
+  Future<List<Map<String, dynamic>>> readWindowsHotkeys() async {
+    final raw = await _prefs.getString(_windowsHotkeysKey);
+    if (raw == null || raw.isEmpty) return const <Map<String, dynamic>>[];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false);
+      }
+    } catch (_) {
+      await _prefs.remove(_windowsHotkeysKey);
+    }
+    return const <Map<String, dynamic>>[];
+  }
+
+  Future<void> saveWindowsHotkeys(List<Map<String, dynamic>> bindings) =>
+      _prefs.setString(_windowsHotkeysKey, jsonEncode(bindings));
 }

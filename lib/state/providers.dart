@@ -13,8 +13,8 @@ import '../core/network/bili_cookie_store.dart';
 import '../core/network/bili_dio.dart';
 import '../core/network/bili_wbi_signer.dart';
 import '../core/platform/system_media_controls.dart';
+import '../core/platform/windows_hotkeys.dart';
 import '../data/local/app_local_store.dart';
-import '../data/mock/mock_data.dart';
 import '../data/models/models.dart';
 import '../data/repositories/bili_auth_repository.dart';
 import '../data/repositories/bili_music_repository.dart';
@@ -196,6 +196,90 @@ class WindowCloseBehaviorNotifier extends Notifier<WindowCloseBehavior> {
 final windowCloseBehaviorProvider =
     NotifierProvider<WindowCloseBehaviorNotifier, WindowCloseBehavior>(
       WindowCloseBehaviorNotifier.new,
+    );
+
+final playbackBootstrapProvider = Provider<PlaybackState?>((ref) => null);
+
+final windowsHotkeyBootstrapProvider = Provider<List<WindowsHotkeyBinding>>(
+  (ref) => const <WindowsHotkeyBinding>[],
+);
+
+class WindowsHotkeyNotifier extends Notifier<List<WindowsHotkeyBinding>> {
+  bool _hydrated = false;
+
+  @override
+  List<WindowsHotkeyBinding> build() {
+    if (!_hydrated) {
+      _hydrated = true;
+      unawaited(_load());
+    }
+    return ref.read(windowsHotkeyBootstrapProvider);
+  }
+
+  Future<void> setBinding(WindowsHotkeyBinding binding) async {
+    if (!binding.isSet) {
+      await clearBinding(binding.action);
+      return;
+    }
+
+    final next = <WindowsHotkeyBinding>[
+      for (final existing in state)
+        if (existing.action != binding.action &&
+            existing.signature != binding.signature)
+          existing,
+      binding,
+    ];
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> clearBinding(WindowsHotkeyAction action) async {
+    final next = state
+        .where((binding) => binding.action != action)
+        .toList(growable: false);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> clearAll() async {
+    state = const <WindowsHotkeyBinding>[];
+    await _persist(state);
+  }
+
+  Future<void> _persist(List<WindowsHotkeyBinding> bindings) {
+    return ref
+        .read(appLocalStoreProvider)
+        .saveWindowsHotkeys(
+          bindings.map((binding) => binding.toJson()).toList(growable: false),
+        );
+  }
+
+  Future<void> _load() async {
+    try {
+      final bindings = await ref
+          .read(appLocalStoreProvider)
+          .readWindowsHotkeys();
+      final parsed = bindings
+          .map((item) {
+            try {
+              return WindowsHotkeyBinding.fromJson(item);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<WindowsHotkeyBinding>()
+          .where((binding) => binding.isSet)
+          .toList(growable: false);
+      if (state.isEmpty && parsed.isNotEmpty) {
+        state = parsed;
+      }
+    } catch (_) {}
+  }
+}
+
+final windowsHotkeysProvider =
+    NotifierProvider<WindowsHotkeyNotifier, List<WindowsHotkeyBinding>>(
+      WindowsHotkeyNotifier.new,
     );
 
 class SidebarCollapsedNotifier extends Notifier<bool> {
@@ -1424,19 +1508,92 @@ class PlaybackState {
           : errorMessage as String?,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'track': track?.toJson(),
+      'queue': queue.map((track) => track.toJson()).toList(growable: false),
+      'source': source?.toJson(),
+      'isPlaying': isPlaying,
+      'positionMs': position.inMilliseconds,
+      'bufferAheadMs': bufferAhead.inMilliseconds,
+      'isBuffering': isBuffering,
+      'bufferingPercentage': bufferingPercentage,
+      'mediaDurationMs': mediaDuration?.inMilliseconds,
+      'shuffle': shuffle,
+      'repeat': repeat.name,
+      'volume': volume,
+      'liked': liked,
+      'errorMessage': errorMessage,
+    };
+  }
+
+  factory PlaybackState.fromJson(Map<String, dynamic> json) {
+    final track = json['track'] is Map
+        ? Track.fromJson(Map<String, dynamic>.from(json['track'] as Map))
+        : null;
+    final queue =
+        (json['queue'] as List?)
+            ?.whereType<Map>()
+            .map((item) => Track.fromJson(Map<String, dynamic>.from(item)))
+            .where((track) => track.id.isNotEmpty)
+            .toList(growable: false) ??
+        const <Track>[];
+    final repeatName = json['repeat']?.toString();
+    final repeat = PlayRepeatMode.values.firstWhere(
+      (mode) => mode.name == repeatName,
+      orElse: () => PlayRepeatMode.off,
+    );
+    final mediaDurationMs = (json['mediaDurationMs'] as num?)?.toInt();
+    return PlaybackState(
+      track: track,
+      queue: queue,
+      source: null,
+      isPlaying: json['isPlaying'] == true,
+      position: Duration(
+        milliseconds: (json['positionMs'] as num?)?.toInt() ?? 0,
+      ),
+      bufferAhead: Duration(
+        milliseconds: (json['bufferAheadMs'] as num?)?.toInt() ?? 0,
+      ),
+      isBuffering: json['isBuffering'] == true,
+      bufferingPercentage:
+          (json['bufferingPercentage'] as num?)?.toDouble() ?? 0,
+      mediaDuration: mediaDurationMs == null
+          ? null
+          : Duration(milliseconds: mediaDurationMs),
+      shuffle: json['shuffle'] == true,
+      repeat: repeat,
+      volume: ((json['volume'] as num?)?.toDouble() ?? 0.7).clamp(0.0, 1.0),
+      liked: json['liked'] == true,
+      errorMessage: json['errorMessage']?.toString(),
+    );
+  }
 }
 
 class PlaybackNotifier extends Notifier<PlaybackState> {
-  Timer? _mockTimer;
   Timer? _bufferingFallbackTimer;
   final _subscriptions = <StreamSubscription<dynamic>>[];
   final _random = Random();
   mk.Player? _player;
   Future<void>? _playerConfiguration;
+  bool _handledBootstrap = false;
+  bool _hydrated = false;
 
   @override
   PlaybackState build() {
-    listenSelf((_, next) => _syncSystemMedia(next));
+    final initial =
+        ref.read(playbackBootstrapProvider) ?? const PlaybackState();
+    if (!_hydrated) {
+      _hydrated = true;
+      if (initial.track == null) {
+        unawaited(_loadPersistedPlaybackState());
+      }
+    }
+    listenSelf((_, next) {
+      _syncSystemMedia(next);
+      unawaited(_persistPlaybackState(next));
+    });
     SystemMediaControls.instance.bind(
       onTogglePlay: togglePlay,
       onNext: () async => next(),
@@ -1444,21 +1601,46 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       onSeek: seek,
     );
 
-    _mockTimer = Timer.periodic(const Duration(seconds: 1), (_) => _tickMock());
     ref.onDispose(() {
-      _mockTimer?.cancel();
       _bufferingFallbackTimer?.cancel();
       for (final subscription in _subscriptions) {
         unawaited(subscription.cancel());
       }
     });
 
-    final initial = PlaybackState(
-      track: MockData.nowPlaying,
-      queue: MockData.tracks,
-    );
-    unawaited(Future<void>.microtask(() => _syncSystemMedia(initial)));
+    if (!_handledBootstrap) {
+      _handledBootstrap = true;
+      unawaited(Future<void>.microtask(() => _syncSystemMedia(initial)));
+      if (initial.isPlaying && initial.track != null) {
+        unawaited(_resumePlaybackState(initial));
+      }
+    }
     return initial;
+  }
+
+  Future<void> _persistPlaybackState(PlaybackState playback) async {
+    if (_skipNetworkBootstrap) return;
+    try {
+      await ref
+          .read(appLocalStoreProvider)
+          .savePlaybackState(playback.toJson());
+    } catch (_) {}
+  }
+
+  Future<void> saveNow() => _persistPlaybackState(state);
+
+  Future<void> _loadPersistedPlaybackState() async {
+    if (_skipNetworkBootstrap || state.track != null) return;
+    try {
+      final stored = await ref.read(appLocalStoreProvider).readPlaybackState();
+      if (stored == null || state.track != null) return;
+      final playback = PlaybackState.fromJson(stored);
+      if (playback.track == null) return;
+      state = playback;
+      if (playback.isPlaying) {
+        unawaited(_resumePlaybackState(playback));
+      }
+    } catch (_) {}
   }
 
   mk.Player _ensurePlayer() {
@@ -1622,20 +1804,6 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     );
   }
 
-  void _tickMock() {
-    if (!state.isPlaying || state.track == null || state.source != null) return;
-    final nextPosition = state.position + const Duration(seconds: 1);
-    if (nextPosition >= state.duration) {
-      if (state.repeat == PlayRepeatMode.one) {
-        state = state.copyWith(position: Duration.zero);
-      } else {
-        next();
-      }
-    } else {
-      state = state.copyWith(position: nextPosition);
-    }
-  }
-
   Future<void> playTrack(Track track, {List<Track>? queue}) async {
     final nextQueue = queue ?? state.queue;
     state = state.copyWith(
@@ -1654,6 +1822,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
 
     if (!_hasResolvableSource(track)) {
       await _player?.stop();
+      state = state.copyWith(isPlaying: false, errorMessage: '当前内容没有可播放源');
       return;
     }
 
@@ -1673,7 +1842,12 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       await _ensurePlayer().playOrPause();
       return;
     }
-    state = state.copyWith(isPlaying: !state.isPlaying);
+    if (state.track == null) return;
+    if (state.isPlaying) {
+      state = state.copyWith(isPlaying: false);
+      return;
+    }
+    await _resumePlaybackState(state.copyWith(isPlaying: true));
   }
 
   Future<void> seek(Duration position) async {
@@ -1692,8 +1866,13 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   }
 
   void next() {
-    final queue = state.queue.isEmpty ? MockData.tracks : state.queue;
+    final queue = state.queue;
+    if (queue.isEmpty) return;
     final currentIndex = queue.indexWhere((item) => item.id == state.track?.id);
+    if (currentIndex < 0) {
+      unawaited(playTrack(queue.first, queue: queue));
+      return;
+    }
     final nextIndex = state.shuffle
         ? _randomQueueIndex(queue.length, currentIndex)
         : (currentIndex + 1) % queue.length;
@@ -1706,14 +1885,37 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   }
 
   void previous() {
+    final queue = state.queue;
+    if (queue.isEmpty) return;
+    final currentIndex = queue.indexWhere((item) => item.id == state.track?.id);
+    if (currentIndex < 0) {
+      unawaited(playTrack(queue.first, queue: queue));
+      return;
+    }
     if (state.position > const Duration(seconds: 3)) {
       unawaited(seek(Duration.zero));
       return;
     }
-    final queue = state.queue.isEmpty ? MockData.tracks : state.queue;
-    final currentIndex = queue.indexWhere((item) => item.id == state.track?.id);
     final previousIndex = (currentIndex - 1 + queue.length) % queue.length;
     unawaited(playTrack(queue[previousIndex], queue: queue));
+  }
+
+  Future<void> _resumePlaybackState(PlaybackState snapshot) async {
+    final track = snapshot.track;
+    if (track == null) return;
+    final position = snapshot.position;
+    final volume = snapshot.volume;
+    final shuffle = snapshot.shuffle;
+    final repeat = snapshot.repeat;
+    final liked = snapshot.liked;
+    final queue = snapshot.queue.isEmpty ? <Track>[track] : snapshot.queue;
+
+    await playTrack(track, queue: queue);
+    setVolume(volume);
+    if (position > Duration.zero) {
+      await seek(position);
+    }
+    state = state.copyWith(shuffle: shuffle, repeat: repeat, liked: liked);
   }
 
   int _randomQueueIndex(int length, int currentIndex) {

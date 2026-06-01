@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/platform/windows_hotkeys.dart';
 import 'state/providers.dart';
 
 /// Root widget: wires the router and the dark/light themes, switching theme
@@ -23,13 +24,16 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
     with WindowListener, TrayListener {
   bool _windowsControlsReady = false;
   _TrayMenuSnapshot? _lastTrayMenuSnapshot;
+  PlaybackNotifier? _playbackNotifier;
 
   @override
   void initState() {
     super.initState();
+    _playbackNotifier = ref.read(playbackProvider.notifier);
     if (Platform.isWindows) {
       windowManager.addListener(this);
       trayManager.addListener(this);
+      WindowsHotkeyBridge.instance.setActionHandler(_handleHotkeyAction);
       unawaited(_initWindowsControls());
     }
   }
@@ -37,6 +41,10 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
   @override
   void dispose() {
     if (Platform.isWindows) {
+      final playbackNotifier = _playbackNotifier;
+      if (playbackNotifier != null) {
+        unawaited(playbackNotifier.saveNow());
+      }
       windowManager.removeListener(this);
       trayManager.removeListener(this);
     }
@@ -48,6 +56,9 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
     final themeMode = ref.watch(themeModeProvider);
     ref.listen(playbackProvider, (_, next) {
       if (Platform.isWindows) unawaited(_syncTray(next));
+    });
+    ref.listen(windowsHotkeysProvider, (_, next) {
+      if (Platform.isWindows) unawaited(_syncWindowsHotkeys(next));
     });
 
     return MaterialApp.router(
@@ -70,6 +81,25 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
     await trayManager.setToolTip('BiliTune');
     _windowsControlsReady = true;
     await _syncTray(ref.read(playbackProvider));
+    await _syncWindowsHotkeys(ref.read(windowsHotkeysProvider));
+  }
+
+  Future<void> _syncWindowsHotkeys(List<WindowsHotkeyBinding> bindings) async {
+    if (!Platform.isWindows) return;
+    await WindowsHotkeyBridge.instance.sync(bindings);
+  }
+
+  Future<void> _handleHotkeyAction(WindowsHotkeyAction action) async {
+    switch (action) {
+      case WindowsHotkeyAction.playPause:
+        await ref.read(playbackProvider.notifier).togglePlay();
+      case WindowsHotkeyAction.previousTrack:
+        ref.read(playbackProvider.notifier).previous();
+      case WindowsHotkeyAction.nextTrack:
+        ref.read(playbackProvider.notifier).next();
+      case WindowsHotkeyAction.toggleWindow:
+        await _toggleWindow();
+    }
   }
 
   Future<void> _syncTray(PlaybackState playback) async {
@@ -136,7 +166,16 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
     await windowManager.focus();
   }
 
+  Future<void> _toggleWindow() async {
+    if (await windowManager.isVisible()) {
+      await windowManager.hide();
+      return;
+    }
+    await _showWindow();
+  }
+
   Future<void> _exitApp() async {
+    await ref.read(playbackProvider.notifier).saveNow();
     await windowManager.setPreventClose(false);
     await trayManager.destroy();
     await windowManager.destroy();
@@ -146,6 +185,8 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
   Future<void> onWindowClose() async {
     final preventClose = await windowManager.isPreventClose();
     if (!preventClose) return;
+
+    await ref.read(playbackProvider.notifier).saveNow();
 
     switch (ref.read(windowCloseBehaviorProvider)) {
       case WindowCloseBehavior.minimize:

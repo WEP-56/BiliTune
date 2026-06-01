@@ -95,6 +95,57 @@ class Track {
       sourceExpiresAt: sourceExpiresAt ?? this.sourceExpiresAt,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'id': id,
+      'title': title,
+      'artist': artist,
+      'durationMs': duration.inMilliseconds,
+      'type': type.name,
+      'gradientSeed': gradientSeed,
+      'coverUrl': coverUrl,
+      'playCount': playCount,
+      'bvid': bvid,
+      'aid': aid,
+      'cid': cid,
+      'audioId': audioId,
+      'webUrl': webUrl?.toString(),
+      'sourceUrl': sourceUrl,
+      'sourceExpiresAt': sourceExpiresAt?.millisecondsSinceEpoch,
+    };
+  }
+
+  factory Track.fromJson(Map<String, dynamic> json) {
+    final webUrl = json['webUrl']?.toString();
+    final sourceExpiresAt = (json['sourceExpiresAt'] as num?)?.toInt();
+    return Track(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      artist: json['artist']?.toString() ?? '',
+      duration: Duration(
+        milliseconds:
+            (json['durationMs'] as num?)?.toInt() ??
+            (json['duration'] as num?)?.toInt() ??
+            0,
+      ),
+      type: (json['type']?.toString() ?? '') == ContentType.video.name
+          ? ContentType.video
+          : ContentType.audio,
+      gradientSeed: (json['gradientSeed'] as num?)?.toInt() ?? 0,
+      coverUrl: json['coverUrl']?.toString(),
+      playCount: (json['playCount'] as num?)?.toInt() ?? 0,
+      bvid: json['bvid']?.toString(),
+      aid: (json['aid'] as num?)?.toInt(),
+      cid: (json['cid'] as num?)?.toInt(),
+      audioId: (json['audioId'] as num?)?.toInt(),
+      webUrl: webUrl == null || webUrl.isEmpty ? null : Uri.tryParse(webUrl),
+      sourceUrl: json['sourceUrl']?.toString(),
+      sourceExpiresAt: sourceExpiresAt == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(sourceExpiresAt),
+    );
+  }
 }
 
 /// A card on a shelf: album, playlist, or creator. [shape] drives the cover.
@@ -272,6 +323,42 @@ class BiliPlaybackSource {
   final bool isLossless;
 
   bool get isExpired => expiresAt != null && DateTime.now().isAfter(expiresAt!);
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'url': url,
+      'backupUrls': backupUrls,
+      'qualityId': qualityId,
+      'label': label,
+      'codecs': codecs,
+      'bandwidth': bandwidth,
+      'mimeType': mimeType,
+      'expiresAt': expiresAt?.millisecondsSinceEpoch,
+      'isLossless': isLossless,
+    };
+  }
+
+  factory BiliPlaybackSource.fromJson(Map<String, dynamic> json) {
+    final expiresAt = (json['expiresAt'] as num?)?.toInt();
+    return BiliPlaybackSource(
+      url: json['url']?.toString() ?? '',
+      backupUrls:
+          (json['backupUrls'] as List?)
+              ?.map((item) => item.toString())
+              .where((item) => item.isNotEmpty)
+              .toList(growable: false) ??
+          const <String>[],
+      qualityId: (json['qualityId'] as num?)?.toInt(),
+      label: json['label']?.toString(),
+      codecs: json['codecs']?.toString(),
+      bandwidth: (json['bandwidth'] as num?)?.toInt(),
+      mimeType: json['mimeType']?.toString(),
+      expiresAt: expiresAt == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(expiresAt),
+      isLossless: json['isLossless'] == true,
+    );
+  }
 }
 
 @immutable

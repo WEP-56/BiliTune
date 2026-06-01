@@ -6,11 +6,13 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart' as mk;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/network/bili_cookie_store.dart';
 import '../core/network/bili_dio.dart';
+import '../core/platform/app_installer.dart';
 import '../core/network/bili_wbi_signer.dart';
 import '../core/platform/system_media_controls.dart';
 import '../core/platform/windows_hotkeys.dart';
@@ -20,6 +22,7 @@ import '../data/local/app_local_store.dart';
 import '../data/models/models.dart';
 import '../data/repositories/bili_auth_repository.dart';
 import '../data/repositories/bili_music_repository.dart';
+import '../data/services/github_release_service.dart';
 import '../data/services/bili_api_service.dart';
 
 const _unset = Object();
@@ -66,6 +69,27 @@ final biliApiServiceProvider = Provider<BiliApiService>(
     ref.watch(biliDioProvider),
     ref.watch(biliCookieStoreProvider),
     ref.watch(biliWbiSignerProvider),
+  ),
+);
+
+final packageInfoProvider = FutureProvider<PackageInfo>(
+  (ref) => PackageInfo.fromPlatform(),
+);
+
+final githubUpdateServiceProvider = Provider<GithubUpdateService>(
+  (ref) => GithubUpdateService(
+    Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 30),
+        sendTimeout: const Duration(seconds: 15),
+        headers: const <String, dynamic>{
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'BiliTune',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      ),
+    ),
   ),
 );
 
@@ -747,6 +771,117 @@ final windowsHotkeysProvider =
     NotifierProvider<WindowsHotkeyNotifier, List<WindowsHotkeyBinding>>(
       WindowsHotkeyNotifier.new,
     );
+
+@immutable
+class AppUpdateState {
+  const AppUpdateState({
+    this.isChecking = false,
+    this.latestRelease,
+    this.hasUpdate,
+    this.errorMessage,
+  });
+
+  final bool isChecking;
+  final GithubReleaseInfo? latestRelease;
+  final bool? hasUpdate;
+  final String? errorMessage;
+
+  String get label {
+    if (isChecking) return '检查中...';
+    if (errorMessage != null) return '检查失败';
+    if (latestRelease == null) return '手动检查';
+    return hasUpdate == true ? '有更新' : '已是最新';
+  }
+
+  AppUpdateState copyWith({
+    bool? isChecking,
+    Object? latestRelease = _unset,
+    Object? hasUpdate = _unset,
+    Object? errorMessage = _unset,
+  }) {
+    return AppUpdateState(
+      isChecking: isChecking ?? this.isChecking,
+      latestRelease: identical(latestRelease, _unset)
+          ? this.latestRelease
+          : latestRelease as GithubReleaseInfo?,
+      hasUpdate: identical(hasUpdate, _unset)
+          ? this.hasUpdate
+          : hasUpdate as bool?,
+      errorMessage: identical(errorMessage, _unset)
+          ? this.errorMessage
+          : errorMessage as String?,
+    );
+  }
+}
+
+@immutable
+class UpdateCheckResult {
+  const UpdateCheckResult({
+    required this.currentVersion,
+    required this.latestRelease,
+    required this.hasUpdate,
+    required this.installerAsset,
+  });
+
+  final PackageInfo currentVersion;
+  final GithubReleaseInfo latestRelease;
+  final bool hasUpdate;
+  final GithubReleaseAsset? installerAsset;
+}
+
+class AppUpdateNotifier extends Notifier<AppUpdateState> {
+  @override
+  AppUpdateState build() => const AppUpdateState();
+
+  Future<UpdateCheckResult?> checkForUpdate() async {
+    if (state.isChecking) return null;
+    state = state.copyWith(isChecking: true, errorMessage: null);
+    try {
+      final packageInfo = await ref.read(packageInfoProvider.future);
+      final updateService = ref.read(githubUpdateServiceProvider);
+      final release = await updateService.fetchLatestRelease();
+      final hasUpdate = isRemoteReleaseNewer(
+        currentVersion: packageInfo.version,
+        remoteTag: release.tagName,
+      );
+      final installerAsset = updateService.selectInstallerAsset(release);
+      state = AppUpdateState(
+        isChecking: false,
+        latestRelease: release,
+        hasUpdate: hasUpdate,
+      );
+      return UpdateCheckResult(
+        currentVersion: packageInfo,
+        latestRelease: release,
+        hasUpdate: hasUpdate,
+        installerAsset: installerAsset,
+      );
+    } catch (error) {
+      state = state.copyWith(
+        isChecking: false,
+        errorMessage: error.toString(),
+      );
+      return null;
+    }
+  }
+
+  Future<File> downloadInstaller(GithubReleaseInfo release) async {
+    final asset = ref.read(githubUpdateServiceProvider).selectInstallerAsset(release);
+    if (asset == null) {
+      throw StateError('当前版本没有可用的安装包。');
+    }
+    return ref.read(githubUpdateServiceProvider).downloadInstallerAsset(asset);
+  }
+
+  Future<bool> canInstallApk() => AppInstaller.canInstallApk();
+
+  Future<void> openInstallSettings() => AppInstaller.openInstallSettings();
+
+  Future<bool> launchInstaller(String path) => AppInstaller.launchInstaller(path);
+}
+
+final appUpdateProvider =
+    NotifierProvider<AppUpdateNotifier, AppUpdateState>(AppUpdateNotifier.new);
 
 class SidebarCollapsedNotifier extends Notifier<bool> {
   @override
@@ -2197,7 +2332,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       _handledBootstrap = true;
       unawaited(Future<void>.microtask(() => _syncSystemMedia(initial)));
       if (initial.isPlaying && initial.track != null) {
-        unawaited(_resumePlaybackState(initial));
+        unawaited(Future<void>.microtask(() => _resumePlaybackState(initial)));
       }
     }
     return initial;
@@ -2317,10 +2452,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     final platform = player.platform;
     if (platform is! mk.NativePlayer) return;
     try {
-      await platform.setProperty(
-        'af',
-        enabled ? 'lavfi=[loudnorm=I=-16:TP=-1.5:LRA=11]' : '',
-      );
+      await platform.setProperty('af', enabled ? 'lavfi=[dynaudnorm]' : '');
     } catch (_) {}
   }
 

@@ -3,13 +3,18 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/utils/format.dart';
 import '../../core/platform/windows_directory_picker.dart';
 import '../../core/platform/windows_hotkeys.dart';
+import '../../shared/widgets/app_toast.dart';
+import 'web_login_dialog.dart';
 import '../../data/models/models.dart';
 import '../../data/repositories/bili_auth_repository.dart';
 import '../../state/providers.dart';
@@ -33,6 +38,8 @@ class SettingsPage extends ConsumerWidget {
     final windowsStartup = Platform.isWindows
         ? ref.watch(windowsStartupProvider)
         : const WindowsStartupState();
+    final packageInfoAsync = ref.watch(packageInfoProvider);
+    final updateState = ref.watch(appUpdateProvider);
     final auth = ref.watch(authProvider);
     final account = auth.account;
 
@@ -266,13 +273,27 @@ class SettingsPage extends ConsumerWidget {
         ),
         _Section(
           title: '关于',
-          children: const [
+          children: [
             _NavTile(
               icon: Icons.info_outline_rounded,
               title: '版本',
-              value: 'v0.1.0',
+              value: packageInfoAsync.when(
+                data: _formatVersionLabel,
+                loading: () => '读取中...',
+                error: (_, _) => '未知',
+              ),
+              onTap: () => _showAboutDialog(context, packageInfoAsync),
             ),
-            _NavTile(icon: Icons.system_update_outlined, title: '检查更新'),
+            _NavTile(
+              icon: Icons.system_update_outlined,
+              title: '检查更新',
+              value: updateState.label,
+              onTap: updateState.isChecking
+                  ? null
+                  : () async => _checkAndHandleUpdate(context, ref),
+            ),
+            if (updateState.errorMessage != null)
+              _SectionNote(text: '更新检查失败：${updateState.errorMessage}'),
           ],
         ),
       ],
@@ -282,6 +303,351 @@ class SettingsPage extends ConsumerWidget {
 
 void showAccountDialog(BuildContext context) {
   showDialog<void>(context: context, builder: (_) => const AccountDialog());
+}
+
+const _githubRepositoryUrl = 'https://github.com/WEP-56/BiliTune';
+
+String _formatVersionLabel(PackageInfo info) {
+  final version = info.version.trim().isEmpty ? '0.0.0' : info.version.trim();
+  final build = info.buildNumber.trim();
+  if (build.isEmpty || build == '0') return 'v$version';
+  return 'v$version+$build';
+}
+
+Future<void> _showAboutDialog(
+  BuildContext context,
+  AsyncValue<PackageInfo> packageInfoAsync,
+) {
+  final colors = context.colors;
+  final versionLabel = packageInfoAsync.maybeWhen(
+    data: _formatVersionLabel,
+    orElse: () => '读取中...',
+  );
+
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        backgroundColor: colors.bgElevated,
+        title: Text(
+          '关于 BiliTune',
+          style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '当前版本：$versionLabel',
+                style: AppTypography.body.copyWith(color: colors.textPrimary),
+              ),
+              const SizedBox(height: AppSpacing.s4),
+              Text(
+                '免责声明',
+                style: AppTypography.titleS.copyWith(
+                  color: colors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              Text(
+                'BiliTune 是基于公开网络服务实现的第三方音乐客户端，与 Bilibili 官方无从属、授权或背书关系。请遵守相关平台协议与所在地法律法规使用。',
+                style: AppTypography.body.copyWith(
+                  color: colors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s4),
+              Text(
+                'GitHub 仓库',
+                style: AppTypography.titleS.copyWith(
+                  color: colors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              SelectableText(
+                _githubRepositoryUrl,
+                style: AppTypography.body.copyWith(color: colors.accent),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('关闭'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('打开仓库'),
+            onPressed: () async {
+              final opened = await launchUrl(
+                Uri.parse(_githubRepositoryUrl),
+                mode: LaunchMode.externalApplication,
+              );
+              if (!opened && context.mounted) {
+                showAppToast(
+                  context,
+                  message: '无法打开 GitHub 仓库',
+                  icon: Icons.error_outline_rounded,
+                  accentColor: colors.error,
+                );
+              }
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<void> _checkAndHandleUpdate(BuildContext context, WidgetRef ref) async {
+  final colors = context.colors;
+  final result = await ref.read(appUpdateProvider.notifier).checkForUpdate();
+  if (!context.mounted) return;
+
+  if (result == null) {
+    final error = ref.read(appUpdateProvider).errorMessage ?? '检查更新失败';
+    showAppToast(
+      context,
+      message: error,
+      icon: Icons.error_outline_rounded,
+      accentColor: colors.error,
+    );
+    return;
+  }
+
+  if (!result.hasUpdate) {
+    showAppToast(
+      context,
+      message: '已经是最新版本',
+      icon: Icons.check_circle_outline_rounded,
+      accentColor: colors.success,
+    );
+    return;
+  }
+
+  if (result.installerAsset == null) {
+    showAppToast(
+      context,
+      message: '发现 ${result.latestRelease.tagName}，但没有适合当前平台的安装包',
+      icon: Icons.warning_amber_rounded,
+      accentColor: colors.warning,
+    );
+    return;
+  }
+
+  final confirmed = await _confirmInstallUpdate(context, result);
+  if (confirmed != true || !context.mounted) return;
+  await _downloadAndInstallUpdate(context, ref, result);
+}
+
+Future<bool?> _confirmInstallUpdate(
+  BuildContext context,
+  UpdateCheckResult result,
+) {
+  final colors = context.colors;
+  final release = result.latestRelease;
+  final asset = result.installerAsset;
+  final notes = release.body.trim().isEmpty ? '暂无更新说明。' : release.body.trim();
+  final assetLabel = asset == null
+      ? '当前平台暂无安装包'
+      : '${asset.name} · ${Format.bytes(asset.sizeBytes)}';
+
+  return showDialog<bool>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        backgroundColor: colors.bgElevated,
+        title: Text(
+          '发现新版本 ${release.tagName}',
+          style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '当前版本：${_formatVersionLabel(result.currentVersion)}',
+                style: AppTypography.body.copyWith(
+                  color: colors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              Text(
+                '安装包：$assetLabel',
+                style: AppTypography.body.copyWith(
+                  color: colors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    notes,
+                    style: AppTypography.body.copyWith(
+                      color: colors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('下载并安装'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<void> _downloadAndInstallUpdate(
+  BuildContext context,
+  WidgetRef ref,
+  UpdateCheckResult result,
+) async {
+  final colors = context.colors;
+  final updateNotifier = ref.read(appUpdateProvider.notifier);
+
+  if (Platform.isAndroid && !await updateNotifier.canInstallApk()) {
+    if (!context.mounted) return;
+    final openSettings = await _confirmAndroidInstallPermission(context);
+    if (openSettings == true) {
+      await updateNotifier.openInstallSettings();
+      if (context.mounted) {
+        showAppToast(
+          context,
+          message: '允许安装未知应用后，请回到 BiliTune 重新下载安装',
+          icon: Icons.info_outline_rounded,
+          accentColor: colors.info,
+          duration: const Duration(seconds: 5),
+        );
+      }
+    }
+    return;
+  }
+
+  if (!context.mounted) return;
+  var progressVisible = true;
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _BlockingProgressDialog(
+      title: '下载更新',
+      message: '正在下载 ${result.installerAsset?.name ?? '安装包'}',
+    ),
+  );
+
+  try {
+    final file = await updateNotifier.downloadInstaller(result.latestRelease);
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      progressVisible = false;
+    }
+
+    final launched = await updateNotifier.launchInstaller(file.path);
+    if (!context.mounted) return;
+    showAppToast(
+      context,
+      message: launched ? '已打开系统安装界面' : '无法打开安装包',
+      icon: launched
+          ? Icons.system_update_alt_rounded
+          : Icons.error_outline_rounded,
+      accentColor: launched ? colors.success : colors.error,
+    );
+  } catch (error) {
+    if (!context.mounted) return;
+    if (progressVisible) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+    showAppToast(
+      context,
+      message: '更新安装失败：$error',
+      icon: Icons.error_outline_rounded,
+      accentColor: colors.error,
+      duration: const Duration(seconds: 5),
+    );
+  }
+}
+
+Future<bool?> _confirmAndroidInstallPermission(BuildContext context) {
+  final colors = context.colors;
+  return showDialog<bool>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        backgroundColor: colors.bgElevated,
+        title: Text(
+          '需要安装权限',
+          style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+        ),
+        content: Text(
+          'Android 需要允许 BiliTune 安装未知来源应用。开启后回到 BiliTune，再重新点击检查更新并安装。',
+          style: AppTypography.body.copyWith(color: colors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('去开启'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+class _BlockingProgressDialog extends StatelessWidget {
+  const _BlockingProgressDialog({
+    required this.title,
+    required this.message,
+  });
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return AlertDialog(
+      backgroundColor: colors.bgElevated,
+      title: Text(
+        title,
+        style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+      ),
+      content: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: AppSpacing.s4),
+          Flexible(
+            child: Text(
+              message,
+              style: AppTypography.body.copyWith(color: colors.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 WindowsHotkeyBinding? _bindingFor(
@@ -581,6 +947,23 @@ class AccountDialog extends ConsumerWidget {
                             showDialog<void>(
                               context: context,
                               builder: (_) => const QrLoginDialog(),
+                            );
+                          },
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s3),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    icon: const Icon(Icons.language_rounded),
+                    label: const Text('网页登录（短信 / 密码）'),
+                    onPressed: auth.isLoading
+                        ? null
+                        : () {
+                            Navigator.of(context).pop();
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => const WebLoginDialog(),
                             );
                           },
                   ),

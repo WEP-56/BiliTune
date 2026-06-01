@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/models/models.dart';
+import 'app_toast.dart';
 import '../../state/providers.dart';
 
 Future<void> showCreateFavoriteFolderDialog(BuildContext context) {
@@ -294,10 +295,14 @@ class _AddToFavoriteDialog extends ConsumerWidget {
           .read(libraryProvider.notifier)
           .addTrackToFavoriteFolder(track, folder.mediaId);
       if (!context.mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(
+      final colors = context.colors;
+      showAppToast(
         context,
-      ).showSnackBar(SnackBar(content: Text('已添加到 ${folder.title}')));
+        message: '已添加到 ${folder.title}',
+        icon: Icons.favorite_rounded,
+        accentColor: colors.brand,
+      );
+      Navigator.of(context).pop(true);
     } catch (_) {
       // Error text is surfaced by LibraryState in the dialog.
     }

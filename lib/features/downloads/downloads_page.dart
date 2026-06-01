@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/models/models.dart';
+import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/brand_button.dart';
 import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/section_header.dart';
@@ -123,6 +124,7 @@ class DownloadsPage extends ConsumerWidget {
 
   Future<void> _openInFolder(BuildContext context, String? savePath) async {
     if (savePath == null || savePath.isEmpty) return;
+    final colors = context.colors;
     try {
       if (Platform.isWindows) {
         await Process.start('explorer.exe', ['/select,$savePath']);
@@ -138,15 +140,21 @@ class DownloadsPage extends ConsumerWidget {
         return;
       }
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        showAppToast(
           context,
-        ).showSnackBar(const SnackBar(content: Text('当前平台暂不支持打开文件夹')));
+          message: '当前平台暂不支持打开文件夹',
+          icon: Icons.info_outline_rounded,
+          accentColor: colors.info,
+        );
       }
     } catch (error) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        showAppToast(
           context,
-        ).showSnackBar(SnackBar(content: Text('无法打开文件夹：$error')));
+          message: '无法打开文件夹：$error',
+          icon: Icons.error_outline_rounded,
+          accentColor: colors.error,
+        );
       }
     }
   }

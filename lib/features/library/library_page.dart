@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/models/models.dart';
+import '../../shared/widgets/app_toast.dart';
 import '../../shared/widgets/brand_button.dart';
 import '../../shared/widgets/cover_image.dart';
 import '../../shared/widgets/favorite_folder_dialogs.dart';
@@ -78,6 +79,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       ? () => showCreateFavoriteFolderDialog(context)
                       : () => context.go('/settings'),
                   onSelect: _selectPlaylist,
+                  onHideFolder: (playlist) => _hidePlaylist(context, playlist),
                 ),
               ),
               const SizedBox(width: AppSpacing.s6),
@@ -122,6 +124,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                     ? () => showCreateFavoriteFolderDialog(context)
                     : () => context.go('/settings'),
                 onSelect: _selectPlaylist,
+                onHideFolder: (playlist) => _hidePlaylist(context, playlist),
               ),
               const SizedBox(height: AppSpacing.s6),
               _PlaylistDetail(
@@ -229,6 +232,59 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     }
   }
 
+  Future<void> _hidePlaylist(
+    BuildContext context,
+    _PlaylistViewData playlist,
+  ) async {
+    final mediaId = playlist.mediaId;
+    if (playlist.kind != _PlaylistKind.folder || mediaId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        final colors = dialogContext.colors;
+        return AlertDialog(
+          backgroundColor: colors.bgElevated,
+          title: Text(
+            '隐藏歌单',
+            style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+          ),
+          content: Text(
+            '只会在 BiliTune 中隐藏「${playlist.title}」，不会删除 B 站账号里的收藏夹。',
+            style: AppTypography.body.copyWith(color: colors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('隐藏'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+
+    _trackSearchDebounce?.cancel();
+    _trackSearchController.clear();
+    await ref.read(libraryProvider.notifier).hideFavoriteFolder(mediaId);
+    if (!context.mounted) return;
+    final colors = context.colors;
+    showAppToast(
+      context,
+      message: '已在 BiliTune 中隐藏「${playlist.title}」',
+      icon: Icons.visibility_off_rounded,
+      accentColor: colors.info,
+      actionLabel: '撤销',
+      onAction: () => unawaited(
+        ref.read(libraryProvider.notifier).unhideFavoriteFolder(mediaId),
+      ),
+    );
+  }
+
   void _scheduleTrackSearch(String value) {
     _trackSearchDebounce?.cancel();
     _trackSearchDebounce = Timer(const Duration(milliseconds: 350), () {
@@ -245,6 +301,7 @@ class _PlaylistList extends StatelessWidget {
     required this.canCreate,
     required this.onCreate,
     required this.onSelect,
+    required this.onHideFolder,
   });
 
   final List<_PlaylistViewData> playlists;
@@ -253,6 +310,7 @@ class _PlaylistList extends StatelessWidget {
   final bool canCreate;
   final VoidCallback onCreate;
   final void Function(_PlaylistViewData playlist) onSelect;
+  final void Function(_PlaylistViewData playlist) onHideFolder;
 
   @override
   Widget build(BuildContext context) {
@@ -294,6 +352,9 @@ class _PlaylistList extends StatelessWidget {
               playlist: playlist,
               selected: playlist.id == selectedId,
               onTap: () => onSelect(playlist),
+              onHide: playlist.kind == _PlaylistKind.folder
+                  ? () => onHideFolder(playlist)
+                  : null,
             ),
         ],
       ),
@@ -347,11 +408,13 @@ class _PlaylistListTile extends StatefulWidget {
     required this.playlist,
     required this.selected,
     required this.onTap,
+    required this.onHide,
   });
 
   final _PlaylistViewData playlist;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback? onHide;
 
   @override
   State<_PlaylistListTile> createState() => _PlaylistListTileState();
@@ -415,10 +478,30 @@ class _PlaylistListTileState extends State<_PlaylistListTile> {
                   ],
                 ),
               ),
-              Icon(
-                widget.playlist.trailingIcon,
-                size: 18,
-                color: colors.textTertiary,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    widget.playlist.trailingIcon,
+                    size: 18,
+                    color: colors.textTertiary,
+                  ),
+                  if (widget.onHide != null && (_hover || widget.selected)) ...[
+                    const SizedBox(width: AppSpacing.s1),
+                    Tooltip(
+                      message: '在 BiliTune 中隐藏',
+                      child: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        icon: Icon(
+                          Icons.visibility_off_outlined,
+                          color: colors.textTertiary,
+                        ),
+                        onPressed: widget.onHide,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),

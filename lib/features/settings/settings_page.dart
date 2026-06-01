@@ -73,6 +73,16 @@ class SettingsPage extends ConsumerWidget {
               title: '响度均衡',
               value: '未启用',
             ),
+            _NavTile(
+              icon: Icons.lyrics_outlined,
+              title: '歌词来源优先级',
+              value: '待实现',
+            ),
+            _NavTile(
+              icon: Icons.history_rounded,
+              title: '播放历史记录上限',
+              value: '100 条',
+            ),
           ],
         ),
         _Section(
@@ -88,6 +98,22 @@ class SettingsPage extends ConsumerWidget {
               title: '同时下载数',
               value: '3',
             ),
+            _NavTile(
+              icon: Icons.folder_open_outlined,
+              title: '本地音乐目录',
+              value: '对应下载路径',
+            ),
+          ],
+        ),
+        _Section(
+          title: '缓存',
+          children: const [
+            _NavTile(icon: Icons.storage_outlined, title: '缓存大小', value: '待统计'),
+            _NavTile(
+              icon: Icons.delete_sweep_outlined,
+              title: '清理缓存',
+              value: '待实现',
+            ),
           ],
         ),
         if (Platform.isWindows)
@@ -95,6 +121,11 @@ class SettingsPage extends ConsumerWidget {
             title: 'Windows',
             children: [
               const _SectionNote(text: '全局快捷键默认不绑定，需手动录制后才会在后台生效。'),
+              const _NavTile(
+                icon: Icons.bolt_outlined,
+                title: '开机自启动',
+                value: '待实现',
+              ),
               _CloseBehaviorTile(
                 value: closeBehavior,
                 onChanged: (behavior) => ref
@@ -689,8 +720,10 @@ class _NavTile extends StatelessWidget {
                     color: colors.textSecondary,
                   ),
                 ),
-              const SizedBox(width: AppSpacing.s2),
-              Icon(Icons.chevron_right_rounded, color: colors.textTertiary),
+              if (onTap != null) ...[
+                const SizedBox(width: AppSpacing.s2),
+                Icon(Icons.chevron_right_rounded, color: colors.textTertiary),
+              ],
             ],
           ),
       onTap: onTap,

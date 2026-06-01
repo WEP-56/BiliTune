@@ -867,13 +867,9 @@ class LibraryNotifier extends Notifier<LibraryState> {
     if (_lastSignedIn != signedIn) {
       _lastSignedIn = signedIn;
       _bootstrapped = false;
-      if (!signedIn) {
-        state = const LibraryState();
-        return const LibraryState();
-      }
     }
 
-    if (!_bootstrapped && signedIn && !_skipNetworkBootstrap) {
+    if (!_bootstrapped && !_skipNetworkBootstrap) {
       _bootstrapped = true;
       unawaited(_bootstrap());
     }
@@ -886,13 +882,18 @@ class LibraryNotifier extends Notifier<LibraryState> {
     try {
       final auth = ref.read(authProvider);
       final repository = ref.read(biliMusicRepositoryProvider);
+      final local = ref.read(appLocalStoreProvider);
       final credential = auth.credential;
       final mid = credential?.mid ?? auth.account?.mid;
+      final hiddenFolderIds = (await local.readHiddenFolderIds()).toSet();
 
-      final folders = mid == null
+      final syncedFolders = mid == null
           ? const <BiliFavoriteFolder>[]
           : await repository.favoriteFolders(mid);
-      final recentHistory = await _loadHistory(repository);
+      final folders = syncedFolders
+          .where((folder) => !hiddenFolderIds.contains(folder.mediaId))
+          .toList(growable: false);
+      final recentHistory = await local.readPlaybackHistory();
       state = state.copyWith(
         folders: folders,
         selectedFolderId: null,
@@ -902,14 +903,6 @@ class LibraryNotifier extends Notifier<LibraryState> {
       );
     } catch (error) {
       state = state.copyWith(isLoading: false, errorMessage: error.toString());
-    }
-  }
-
-  Future<List<Track>> _loadHistory(BiliMusicRepository repository) async {
-    try {
-      return await repository.historyTracks();
-    } catch (_) {
-      return const <Track>[];
     }
   }
 
@@ -1046,6 +1039,55 @@ class LibraryNotifier extends Notifier<LibraryState> {
       rethrow;
     }
   }
+
+  Future<void> recordPlayback(Track track) async {
+    final local = ref.read(appLocalStoreProvider);
+    final history = await local.readPlaybackHistory();
+    final next = <Track>[
+      track,
+      ...history.where((item) => _trackKey(item) != _trackKey(track)),
+    ].take(100).toList(growable: false);
+    await local.savePlaybackHistory(next);
+    state = state.copyWith(recentHistory: next);
+  }
+
+  Future<void> refreshLocalHistory() async {
+    final history = await ref.read(appLocalStoreProvider).readPlaybackHistory();
+    state = state.copyWith(recentHistory: history);
+  }
+
+  Future<void> hideFavoriteFolder(int mediaId) async {
+    final local = ref.read(appLocalStoreProvider);
+    final hidden = (await local.readHiddenFolderIds()).toSet()..add(mediaId);
+    await local.saveHiddenFolderIds(hidden.toList(growable: false)..sort());
+    final nextFolders = state.folders
+        .where((folder) => folder.mediaId != mediaId)
+        .toList(growable: false);
+    state = state.copyWith(
+      folders: nextFolders,
+      selectedFolderId: state.selectedFolderId == mediaId
+          ? null
+          : state.selectedFolderId,
+      selectedFolderTracks: state.selectedFolderId == mediaId
+          ? const <Track>[]
+          : state.selectedFolderTracks,
+      trackKeyword: state.selectedFolderId == mediaId ? '' : state.trackKeyword,
+      errorMessage: null,
+    );
+  }
+
+  Future<void> unhideFavoriteFolder(int mediaId) async {
+    final local = ref.read(appLocalStoreProvider);
+    final hidden = (await local.readHiddenFolderIds()).toSet()..remove(mediaId);
+    await local.saveHiddenFolderIds(hidden.toList(growable: false)..sort());
+    await _bootstrap();
+  }
+
+  String _trackKey(Track track) =>
+      track.bvid ??
+      track.aid?.toString() ??
+      track.audioId?.toString() ??
+      track.id;
 }
 
 final libraryProvider = NotifierProvider<LibraryNotifier, LibraryState>(
@@ -1578,18 +1620,11 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   mk.Player? _player;
   Future<void>? _playerConfiguration;
   bool _handledBootstrap = false;
-  bool _hydrated = false;
 
   @override
   PlaybackState build() {
     final initial =
         ref.read(playbackBootstrapProvider) ?? const PlaybackState();
-    if (!_hydrated) {
-      _hydrated = true;
-      if (initial.track == null) {
-        unawaited(_loadPersistedPlaybackState());
-      }
-    }
     listenSelf((_, next) {
       _syncSystemMedia(next);
       unawaited(_persistPlaybackState(next));
@@ -1628,20 +1663,6 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   }
 
   Future<void> saveNow() => _persistPlaybackState(state);
-
-  Future<void> _loadPersistedPlaybackState() async {
-    if (_skipNetworkBootstrap || state.track != null) return;
-    try {
-      final stored = await ref.read(appLocalStoreProvider).readPlaybackState();
-      if (stored == null || state.track != null) return;
-      final playback = PlaybackState.fromJson(stored);
-      if (playback.track == null) return;
-      state = playback;
-      if (playback.isPlaying) {
-        unawaited(_resumePlaybackState(playback));
-      }
-    } catch (_) {}
-  }
 
   mk.Player _ensurePlayer() {
     final existing = _player;
@@ -1819,6 +1840,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       liked: false,
       errorMessage: null,
     );
+    unawaited(ref.read(libraryProvider.notifier).recordPlayback(track));
 
     if (!_hasResolvableSource(track)) {
       await _player?.stop();

@@ -397,33 +397,25 @@ class BiliMusicRepository {
     return tracks.take(pageSize).toList(growable: false);
   }
 
-  Future<List<LyricLine>> trackLyrics(Track track) async {
-    if (track.type == ContentType.audio && track.audioId != null) {
-      final audioLyrics = await _audioAreaLyrics(track.audioId!);
-      if (audioLyrics.isNotEmpty) return audioLyrics;
+  Future<List<LyricLine>> trackLyrics(
+    Track track, {
+    LyricsSourcePreference sourcePreference = LyricsSourcePreference.auto,
+  }) async {
+    switch (sourcePreference) {
+      case LyricsSourcePreference.biliOnly:
+        return _biliLyrics(track);
+      case LyricsSourcePreference.lrclibOnly:
+        return _lrclibLyrics(track);
+      case LyricsSourcePreference.lrclibFirst:
+        final lrclib = await _lrclibLyrics(track);
+        if (lrclib.isNotEmpty) return lrclib;
+        return _biliLyrics(track);
+      case LyricsSourcePreference.biliFirst:
+      case LyricsSourcePreference.auto:
+        final bili = await _biliLyrics(track);
+        if (bili.isNotEmpty) return bili;
+        return _lrclibLyrics(track);
     }
-
-    final context = await _lyricVideoContext(track);
-    if (context != null) {
-      final biliLyrics = await _videoSubtitleLyrics(context.playerData);
-      if (biliLyrics.isNotEmpty) return biliLyrics;
-    }
-
-    final metadata = await _lyricMetadata(track, context: context);
-    final candidates = _lyricQueries(metadata, track);
-    for (final candidate in candidates) {
-      final items = await _api.lrclibLyrics(
-        trackName: candidate.title,
-        artistName: candidate.artist,
-        durationSeconds: candidate.duration.inSeconds > 0
-            ? candidate.duration.inSeconds
-            : null,
-      );
-      final parsed = _lyricsFromLrclib(items);
-      if (parsed.isNotEmpty) return parsed;
-    }
-
-    return const <LyricLine>[];
   }
 
   Future<List<Track>> relatedTracks(Track track, {int limit = 12}) async {
@@ -452,7 +444,10 @@ class BiliMusicRepository {
     return _trackFromVideoView(data);
   }
 
-  Future<BiliPlaybackSource> resolvePlaybackSource(Track track) async {
+  Future<BiliPlaybackSource> resolvePlaybackSource(
+    Track track, {
+    AudioQualityPreference quality = AudioQualityPreference.auto,
+  }) async {
     if (track.sourceUrl != null &&
         !(track.sourceExpiresAt != null &&
             DateTime.now().isAfter(track.sourceExpiresAt!))) {
@@ -475,28 +470,136 @@ class BiliMusicRepository {
 
     final data = await _api.videoPlayUrl(bvid: bvid, cid: cid);
     final dash = _asMap(data['dash']);
-    final flac = _asMap(_asMap(dash['flac'])['audio']);
+    final audio = _extractList(dash['audio']).map(_asMap).toList();
+    final source = _resolveVideoDashSource(
+      dash: dash,
+      audio: audio,
+      quality: quality,
+    );
+    if (source != null) return source;
+
+    throw StateError('No playable DASH audio stream returned by Bilibili.');
+  }
+
+  Future<List<LyricLine>> _biliLyrics(Track track) async {
+    if (track.type == ContentType.audio && track.audioId != null) {
+      final audioLyrics = await _audioAreaLyrics(track.audioId!);
+      if (audioLyrics.isNotEmpty) return audioLyrics;
+    }
+
+    final context = await _lyricVideoContext(track);
+    if (context == null) return const <LyricLine>[];
+    return _videoSubtitleLyrics(context.playerData);
+  }
+
+  Future<List<LyricLine>> _lrclibLyrics(Track track) async {
+    final context = await _lyricVideoContext(track);
+    final metadata = await _lyricMetadata(track, context: context);
+    final candidates = _lyricQueries(metadata, track);
+    for (final candidate in candidates) {
+      final items = await _api.lrclibLyrics(
+        trackName: candidate.title,
+        artistName: candidate.artist,
+        durationSeconds: candidate.duration.inSeconds > 0
+            ? candidate.duration.inSeconds
+            : null,
+      );
+      final parsed = _lyricsFromLrclib(items);
+      if (parsed.isNotEmpty) return parsed;
+    }
+    return const <LyricLine>[];
+  }
+
+  BiliPlaybackSource? _resolveVideoDashSource({
+    required Map<String, dynamic> dash,
+    required List<Map<String, dynamic>> audio,
+    required AudioQualityPreference quality,
+  }) {
     final flacSource = _sourceFromDashAudio(
-      flac,
+      _asMap(_asMap(dash['flac'])['audio']),
       label: 'FLAC',
       lossless: true,
     );
-    if (flacSource != null) return flacSource;
-
     final dolby = _extractList(_asMap(dash['dolby'])['audio']);
-    if (dolby.isNotEmpty) {
-      final source = _sourceFromDashAudio(_asMap(dolby.first), label: 'Dolby');
-      if (source != null) return source;
+    final dolbySource = dolby.isEmpty
+        ? null
+        : _sourceFromDashAudio(_asMap(dolby.first), label: 'Dolby');
+    final specialFirst =
+        quality == AudioQualityPreference.auto ||
+        quality == AudioQualityPreference.lossless;
+
+    if (specialFirst) {
+      if (flacSource != null) return flacSource;
+      if (dolbySource != null) return dolbySource;
     }
 
-    final audio = _extractList(dash['audio']).map(_asMap).toList();
-    audio.sort((a, b) => _qualityRank(a).compareTo(_qualityRank(b)));
-    for (final item in audio.reversed) {
+    for (final item in _orderedDashAudio(audio, quality)) {
       final source = _sourceFromDashAudio(item, label: _qualityLabel(item));
       if (source != null) return source;
     }
 
-    throw StateError('No playable DASH audio stream returned by Bilibili.');
+    if (!specialFirst) {
+      if (flacSource != null) return flacSource;
+      if (dolbySource != null) return dolbySource;
+    }
+
+    return null;
+  }
+
+  List<Map<String, dynamic>> _orderedDashAudio(
+    List<Map<String, dynamic>> audio,
+    AudioQualityPreference quality,
+  ) {
+    final sorted = audio.toList(growable: false)
+      ..sort((a, b) => _qualityRank(a).compareTo(_qualityRank(b)));
+    if (quality == AudioQualityPreference.auto ||
+        quality == AudioQualityPreference.lossless) {
+      return sorted.reversed.toList(growable: false);
+    }
+
+    final preferredIds = switch (quality) {
+      AudioQualityPreference.high => const <int>[
+        30280,
+        30232,
+        30260,
+        30259,
+        30216,
+        30257,
+      ],
+      AudioQualityPreference.medium => const <int>[
+        30232,
+        30260,
+        30259,
+        30280,
+        30216,
+        30257,
+      ],
+      AudioQualityPreference.low => const <int>[
+        30216,
+        30257,
+        30259,
+        30260,
+        30232,
+        30280,
+      ],
+      _ => const <int>[],
+    };
+
+    final seen = <int>{};
+    final ordered = <Map<String, dynamic>>[];
+    for (final id in preferredIds) {
+      for (final item in sorted.reversed) {
+        if (_asInt(item['id']) == id && seen.add(id)) {
+          ordered.add(item);
+          break;
+        }
+      }
+    }
+    for (final item in sorted.reversed) {
+      final id = _asInt(item['id']);
+      if (id == null || seen.add(id)) ordered.add(item);
+    }
+    return ordered;
   }
 
   Future<Track> _hydrateVideoTrack(Track track) async {

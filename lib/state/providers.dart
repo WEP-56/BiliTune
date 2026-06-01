@@ -14,6 +14,8 @@ import '../core/network/bili_dio.dart';
 import '../core/network/bili_wbi_signer.dart';
 import '../core/platform/system_media_controls.dart';
 import '../core/platform/windows_hotkeys.dart';
+import '../core/platform/windows_startup.dart';
+import '../core/utils/format.dart';
 import '../data/local/app_local_store.dart';
 import '../data/models/models.dart';
 import '../data/repositories/bili_auth_repository.dart';
@@ -196,6 +198,470 @@ class WindowCloseBehaviorNotifier extends Notifier<WindowCloseBehavior> {
 final windowCloseBehaviorProvider =
     NotifierProvider<WindowCloseBehaviorNotifier, WindowCloseBehavior>(
       WindowCloseBehaviorNotifier.new,
+    );
+
+@immutable
+class PlaybackSettings {
+  const PlaybackSettings({
+    this.audioQuality = AudioQualityPreference.auto,
+    this.playbackSpeed = 1.0,
+    this.loudnessNormalization = false,
+    this.lyricsSourcePreference = LyricsSourcePreference.auto,
+    this.historyLimit = 100,
+  });
+
+  final AudioQualityPreference audioQuality;
+  final double playbackSpeed;
+  final bool loudnessNormalization;
+  final LyricsSourcePreference lyricsSourcePreference;
+  final int historyLimit;
+
+  PlaybackSettings copyWith({
+    AudioQualityPreference? audioQuality,
+    double? playbackSpeed,
+    bool? loudnessNormalization,
+    LyricsSourcePreference? lyricsSourcePreference,
+    int? historyLimit,
+  }) {
+    return PlaybackSettings(
+      audioQuality: audioQuality ?? this.audioQuality,
+      playbackSpeed: playbackSpeed ?? this.playbackSpeed,
+      loudnessNormalization:
+          loudnessNormalization ?? this.loudnessNormalization,
+      lyricsSourcePreference:
+          lyricsSourcePreference ?? this.lyricsSourcePreference,
+      historyLimit: historyLimit ?? this.historyLimit,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'audioQuality': audioQuality.name,
+      'playbackSpeed': playbackSpeed,
+      'loudnessNormalization': loudnessNormalization,
+      'lyricsSourcePreference': lyricsSourcePreference.name,
+      'historyLimit': historyLimit,
+    };
+  }
+
+  factory PlaybackSettings.fromJson(Map<String, dynamic> json) {
+    return PlaybackSettings(
+      audioQuality: _enumFromName(
+        AudioQualityPreference.values,
+        json['audioQuality'],
+        AudioQualityPreference.auto,
+      ),
+      playbackSpeed: _clampPlaybackSpeed(json['playbackSpeed']),
+      loudnessNormalization: json['loudnessNormalization'] == true,
+      lyricsSourcePreference: _enumFromName(
+        LyricsSourcePreference.values,
+        json['lyricsSourcePreference'],
+        LyricsSourcePreference.auto,
+      ),
+      historyLimit: _clampHistoryLimit(json['historyLimit']),
+    );
+  }
+}
+
+T _enumFromName<T extends Enum>(List<T> values, Object? raw, T fallback) {
+  final name = raw?.toString();
+  for (final value in values) {
+    if (value.name == name) return value;
+  }
+  return fallback;
+}
+
+double _clampPlaybackSpeed(Object? raw) {
+  final value = raw is num ? raw.toDouble() : double.tryParse('$raw');
+  return (value ?? 1.0).clamp(0.5, 2.0).toDouble();
+}
+
+int _clampHistoryLimit(Object? raw) {
+  final value = raw is num ? raw.toInt() : int.tryParse('$raw');
+  return (value ?? 100).clamp(20, 500).toInt();
+}
+
+String _pathJoin(String left, String right) {
+  final separator = Platform.pathSeparator;
+  return left.endsWith(separator) ? '$left$right' : '$left$separator$right';
+}
+
+Future<Directory> _managedCacheDirectory() async {
+  Directory base;
+  try {
+    base = await getApplicationCacheDirectory();
+  } catch (_) {
+    base = await getTemporaryDirectory();
+  }
+  final directory = Directory(_pathJoin(base.path, 'BiliTune'));
+  if (!await directory.exists()) {
+    await directory.create(recursive: true);
+  }
+  return directory;
+}
+
+Future<int> _directorySizeBytes(Directory directory) async {
+  if (!await directory.exists()) return 0;
+  var total = 0;
+  await for (final entity in directory.list(
+    recursive: true,
+    followLinks: false,
+  )) {
+    if (entity is File) {
+      try {
+        total += await entity.length();
+      } catch (_) {}
+    }
+  }
+  return total;
+}
+
+Future<void> _deleteDirectoryContents(Directory directory) async {
+  if (!await directory.exists()) return;
+  final entries = await directory
+      .list(recursive: true, followLinks: false)
+      .toList();
+  entries.sort((a, b) => b.path.length.compareTo(a.path.length));
+  for (final entity in entries) {
+    try {
+      await entity.delete(recursive: true);
+    } catch (_) {}
+  }
+}
+
+final playbackSettingsBootstrapProvider = Provider<PlaybackSettings?>(
+  (ref) => null,
+);
+
+class PlaybackSettingsNotifier extends Notifier<PlaybackSettings> {
+  bool _hydrated = false;
+
+  @override
+  PlaybackSettings build() {
+    if (!_hydrated) {
+      _hydrated = true;
+      unawaited(_load());
+    }
+    return ref.read(playbackSettingsBootstrapProvider) ??
+        const PlaybackSettings();
+  }
+
+  Future<void> _load() async {
+    try {
+      final raw = await ref.read(appLocalStoreProvider).readPlaybackSettings();
+      if (raw != null) state = PlaybackSettings.fromJson(raw);
+    } catch (_) {}
+  }
+
+  Future<void> setAudioQuality(AudioQualityPreference value) =>
+      _update(state.copyWith(audioQuality: value));
+
+  Future<void> setPlaybackSpeed(double value) =>
+      _update(state.copyWith(playbackSpeed: _clampPlaybackSpeed(value)));
+
+  Future<void> setLoudnessNormalization(bool value) =>
+      _update(state.copyWith(loudnessNormalization: value));
+
+  Future<void> setLyricsSourcePreference(LyricsSourcePreference value) =>
+      _update(state.copyWith(lyricsSourcePreference: value));
+
+  Future<void> setHistoryLimit(int value) async {
+    final limit = _clampHistoryLimit(value);
+    await _update(state.copyWith(historyLimit: limit));
+    final local = ref.read(appLocalStoreProvider);
+    final history = await local.readPlaybackHistory();
+    final trimmed = history.take(limit).toList(growable: false);
+    if (trimmed.length != history.length) {
+      await local.savePlaybackHistory(trimmed);
+    }
+  }
+
+  Future<void> _update(PlaybackSettings next) async {
+    state = next;
+    await ref.read(appLocalStoreProvider).savePlaybackSettings(next.toJson());
+  }
+}
+
+final playbackSettingsProvider =
+    NotifierProvider<PlaybackSettingsNotifier, PlaybackSettings>(
+      PlaybackSettingsNotifier.new,
+    );
+
+@immutable
+class DownloadSettings {
+  const DownloadSettings({
+    this.directoryPath,
+    this.maxConcurrent = 3,
+    this.outputFileType = 'audio',
+  });
+
+  final String? directoryPath;
+  final int maxConcurrent;
+  final String outputFileType;
+
+  String get formatLabel => switch (outputFileType) {
+    'audio' => '原始音频',
+    _ => outputFileType,
+  };
+
+  DownloadSettings copyWith({
+    Object? directoryPath = _unset,
+    int? maxConcurrent,
+    String? outputFileType,
+  }) {
+    return DownloadSettings(
+      directoryPath: identical(directoryPath, _unset)
+          ? this.directoryPath
+          : directoryPath as String?,
+      maxConcurrent: maxConcurrent ?? this.maxConcurrent,
+      outputFileType: outputFileType ?? this.outputFileType,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'directoryPath': directoryPath,
+      'maxConcurrent': maxConcurrent,
+      'outputFileType': outputFileType,
+    };
+  }
+
+  factory DownloadSettings.fromJson(Map<String, dynamic> json) {
+    final rawPath = json['directoryPath']?.toString();
+    return DownloadSettings(
+      directoryPath: rawPath == null || rawPath.trim().isEmpty
+          ? null
+          : rawPath.trim(),
+      maxConcurrent: _clampConcurrentDownloads(json['maxConcurrent']),
+      outputFileType: json['outputFileType']?.toString() == 'audio'
+          ? 'audio'
+          : 'audio',
+    );
+  }
+}
+
+int _clampConcurrentDownloads(Object? raw) {
+  final value = raw is num ? raw.toInt() : int.tryParse('$raw');
+  return (value ?? 3).clamp(1, 5).toInt();
+}
+
+final downloadSettingsBootstrapProvider = Provider<DownloadSettings?>(
+  (ref) => null,
+);
+
+class DownloadSettingsNotifier extends Notifier<DownloadSettings> {
+  bool _hydrated = false;
+
+  @override
+  DownloadSettings build() {
+    if (!_hydrated) {
+      _hydrated = true;
+      unawaited(_load());
+    }
+    return ref.read(downloadSettingsBootstrapProvider) ??
+        const DownloadSettings();
+  }
+
+  Future<void> _load() async {
+    try {
+      final raw = await ref.read(appLocalStoreProvider).readDownloadSettings();
+      if (raw != null) state = DownloadSettings.fromJson(raw);
+    } catch (_) {}
+  }
+
+  Future<void> setDirectoryPath(String? path) async {
+    final normalized = path?.trim();
+    await _update(
+      state.copyWith(
+        directoryPath: normalized == null || normalized.isEmpty
+            ? null
+            : normalized,
+      ),
+    );
+  }
+
+  Future<void> setMaxConcurrent(int value) =>
+      _update(state.copyWith(maxConcurrent: _clampConcurrentDownloads(value)));
+
+  Future<void> setOutputFileType(String value) => _update(
+    state.copyWith(outputFileType: value == 'audio' ? 'audio' : 'audio'),
+  );
+
+  Future<void> _update(DownloadSettings next) async {
+    state = next;
+    await ref.read(appLocalStoreProvider).saveDownloadSettings(next.toJson());
+  }
+}
+
+final downloadSettingsProvider =
+    NotifierProvider<DownloadSettingsNotifier, DownloadSettings>(
+      DownloadSettingsNotifier.new,
+    );
+
+Future<Directory> _defaultDownloadDirectory() async {
+  if (Platform.isAndroid) {
+    final base =
+        await getExternalStorageDirectory() ??
+        await getApplicationDocumentsDirectory();
+    final directory = Directory(_pathJoin(base.path, 'BiliTune'));
+    if (!await directory.exists()) await directory.create(recursive: true);
+    return directory;
+  }
+
+  final base =
+      await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+  final directory = Directory(_pathJoin(base.path, 'BiliTune'));
+  if (!await directory.exists()) await directory.create(recursive: true);
+  return directory;
+}
+
+final downloadDirectoryProvider = FutureProvider<String>((ref) async {
+  final settings = ref.watch(downloadSettingsProvider);
+  final customPath = settings.directoryPath;
+  if (customPath != null && customPath.trim().isNotEmpty) {
+    return customPath;
+  }
+  return (await _defaultDownloadDirectory()).path;
+});
+
+@immutable
+class CacheState {
+  const CacheState({
+    this.sizeBytes = 0,
+    this.isLoading = false,
+    this.errorMessage,
+  });
+
+  final int sizeBytes;
+  final bool isLoading;
+  final String? errorMessage;
+
+  String get label => isLoading
+      ? '统计中...'
+      : errorMessage != null
+      ? '读取失败'
+      : Format.bytes(sizeBytes);
+
+  CacheState copyWith({
+    int? sizeBytes,
+    bool? isLoading,
+    Object? errorMessage = _unset,
+  }) {
+    return CacheState(
+      sizeBytes: sizeBytes ?? this.sizeBytes,
+      isLoading: isLoading ?? this.isLoading,
+      errorMessage: identical(errorMessage, _unset)
+          ? this.errorMessage
+          : errorMessage as String?,
+    );
+  }
+}
+
+class CacheNotifier extends Notifier<CacheState> {
+  bool _bootstrapped = false;
+
+  @override
+  CacheState build() {
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      unawaited(refresh());
+    }
+    return const CacheState(isLoading: true);
+  }
+
+  Future<void> refresh() async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final directory = await _managedCacheDirectory();
+      final sizeBytes = await _directorySizeBytes(directory);
+      state = CacheState(sizeBytes: sizeBytes, isLoading: false);
+    } catch (error) {
+      state = state.copyWith(isLoading: false, errorMessage: error.toString());
+    }
+  }
+
+  Future<void> clear() async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final directory = await _managedCacheDirectory();
+      await _deleteDirectoryContents(directory);
+      await refresh();
+    } catch (error) {
+      state = state.copyWith(isLoading: false, errorMessage: error.toString());
+    }
+  }
+}
+
+final cacheProvider = NotifierProvider<CacheNotifier, CacheState>(
+  CacheNotifier.new,
+);
+
+@immutable
+class WindowsStartupState {
+  const WindowsStartupState({
+    this.enabled = false,
+    this.isLoading = false,
+    this.errorMessage,
+  });
+
+  final bool enabled;
+  final bool isLoading;
+  final String? errorMessage;
+
+  WindowsStartupState copyWith({
+    bool? enabled,
+    bool? isLoading,
+    Object? errorMessage = _unset,
+  }) {
+    return WindowsStartupState(
+      enabled: enabled ?? this.enabled,
+      isLoading: isLoading ?? this.isLoading,
+      errorMessage: identical(errorMessage, _unset)
+          ? this.errorMessage
+          : errorMessage as String?,
+    );
+  }
+}
+
+class WindowsStartupNotifier extends Notifier<WindowsStartupState> {
+  bool _bootstrapped = false;
+
+  @override
+  WindowsStartupState build() {
+    if (!Platform.isWindows) {
+      return const WindowsStartupState(enabled: false, isLoading: false);
+    }
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      unawaited(_load());
+    }
+    return const WindowsStartupState(isLoading: true);
+  }
+
+  Future<void> _load() async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final enabled = await WindowsStartupManager.isEnabled();
+      state = WindowsStartupState(enabled: enabled, isLoading: false);
+    } catch (error) {
+      state = state.copyWith(isLoading: false, errorMessage: error.toString());
+    }
+  }
+
+  Future<void> setEnabled(bool value) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      await WindowsStartupManager.setEnabled(value);
+      state = WindowsStartupState(enabled: value, isLoading: false);
+    } catch (error) {
+      state = state.copyWith(isLoading: false, errorMessage: error.toString());
+    }
+  }
+}
+
+final windowsStartupProvider =
+    NotifierProvider<WindowsStartupNotifier, WindowsStartupState>(
+      WindowsStartupNotifier.new,
     );
 
 final playbackBootstrapProvider = Provider<PlaybackState?>((ref) => null);
@@ -861,6 +1327,11 @@ class LibraryNotifier extends Notifier<LibraryState> {
 
   @override
   LibraryState build() {
+    ref.listen<PlaybackSettings>(playbackSettingsProvider, (previous, next) {
+      if (previous?.historyLimit != next.historyLimit) {
+        unawaited(_trimPlaybackHistory(next.historyLimit));
+      }
+    });
     final signedIn = ref.watch(
       authProvider.select((state) => state.isSignedIn),
     );
@@ -894,15 +1365,36 @@ class LibraryNotifier extends Notifier<LibraryState> {
           .where((folder) => !hiddenFolderIds.contains(folder.mediaId))
           .toList(growable: false);
       final recentHistory = await local.readPlaybackHistory();
+      final limit = ref.read(playbackSettingsProvider).historyLimit;
+      final trimmedHistory = recentHistory.take(limit).toList(growable: false);
+      if (trimmedHistory.length != recentHistory.length) {
+        await local.savePlaybackHistory(trimmedHistory);
+      }
       state = state.copyWith(
         folders: folders,
         selectedFolderId: null,
         selectedFolderTracks: const <Track>[],
-        recentHistory: recentHistory,
+        recentHistory: trimmedHistory,
         isLoading: false,
       );
     } catch (error) {
       state = state.copyWith(isLoading: false, errorMessage: error.toString());
+    }
+  }
+
+  Future<void> _trimPlaybackHistory(int limit) async {
+    final local = ref.read(appLocalStoreProvider);
+    final history = await local.readPlaybackHistory();
+    final trimmed = history.take(limit).toList(growable: false);
+    if (trimmed.length != history.length) {
+      await local.savePlaybackHistory(trimmed);
+    }
+    if (state.recentHistory.length != trimmed.length) {
+      state = state.copyWith(recentHistory: trimmed);
+    } else if (trimmed.isNotEmpty &&
+        state.recentHistory.isNotEmpty &&
+        state.recentHistory.first.id == trimmed.first.id) {
+      state = state.copyWith(recentHistory: trimmed);
     }
   }
 
@@ -1043,17 +1535,20 @@ class LibraryNotifier extends Notifier<LibraryState> {
   Future<void> recordPlayback(Track track) async {
     final local = ref.read(appLocalStoreProvider);
     final history = await local.readPlaybackHistory();
+    final limit = ref.read(playbackSettingsProvider).historyLimit;
     final next = <Track>[
       track,
       ...history.where((item) => _trackKey(item) != _trackKey(track)),
-    ].take(100).toList(growable: false);
+    ].take(limit).toList(growable: false);
     await local.savePlaybackHistory(next);
     state = state.copyWith(recentHistory: next);
   }
 
   Future<void> refreshLocalHistory() async {
     final history = await ref.read(appLocalStoreProvider).readPlaybackHistory();
-    state = state.copyWith(recentHistory: history);
+    final limit = ref.read(playbackSettingsProvider).historyLimit;
+    final trimmed = history.take(limit).toList(growable: false);
+    state = state.copyWith(recentHistory: trimmed);
   }
 
   Future<void> hideFavoriteFolder(int mediaId) async {
@@ -1172,11 +1667,17 @@ class DownloadQueueState {
 
 class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   bool _bootstrapped = false;
+  bool _scheduling = false;
   final _cancelTokens = <String, CancelToken>{};
   final _lastProgressPersistAt = <String, DateTime>{};
 
   @override
   DownloadQueueState build() {
+    ref.listen<DownloadSettings>(downloadSettingsProvider, (previous, next) {
+      if (previous?.maxConcurrent != next.maxConcurrent) {
+        unawaited(_scheduleDownloads());
+      }
+    });
     if (!_bootstrapped && !_skipNetworkBootstrap) {
       _bootstrapped = true;
       unawaited(_bootstrap());
@@ -1187,8 +1688,17 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   Future<void> _bootstrap() async {
     state = const DownloadQueueState(isLoading: true);
     try {
-      final tasks = await ref.read(appLocalStoreProvider).readDownloadTasks();
+      final loaded = await ref.read(appLocalStoreProvider).readDownloadTasks();
+      final tasks = loaded
+          .map(
+            (task) => task.status == DownloadTaskStatus.downloading
+                ? task.copyWith(status: DownloadTaskStatus.paused)
+                : task,
+          )
+          .toList(growable: false);
+      if (tasks.length == loaded.length) await _persist(tasks);
       state = state.copyWith(tasks: tasks, isLoading: false);
+      unawaited(_scheduleDownloads());
     } catch (error) {
       state = state.copyWith(isLoading: false, errorMessage: error.toString());
     }
@@ -1199,15 +1709,18 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     String outputFileType = 'audio',
     String? savePath,
   }) async {
+    final settings = ref.read(downloadSettingsProvider);
     final task = DownloadTask.fromTrack(
       track,
-      outputFileType: outputFileType,
+      outputFileType: outputFileType == 'audio'
+          ? settings.outputFileType
+          : outputFileType,
       savePath: savePath,
     );
     final tasks = <DownloadTask>[task, ...state.tasks];
     await _persist(tasks);
     state = state.copyWith(tasks: tasks, errorMessage: null);
-    await _startDownload(task.id);
+    await _scheduleDownloads();
   }
 
   Future<void> pauseTask(String id) async {
@@ -1220,6 +1733,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       id,
       (task) => task.copyWith(status: DownloadTaskStatus.paused),
     );
+    await _scheduleDownloads();
   }
 
   Future<void> resumeTask(String id) async {
@@ -1227,7 +1741,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
       id,
       (task) => task.copyWith(status: DownloadTaskStatus.queued),
     );
-    await _startDownload(id);
+    await _scheduleDownloads();
   }
 
   Future<void> completeTask(String id) async => _updateTask(
@@ -1254,6 +1768,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
         .toList(growable: false);
     await _persist(tasks);
     state = state.copyWith(tasks: tasks);
+    await _scheduleDownloads();
   }
 
   Future<void> clear() async {
@@ -1270,6 +1785,28 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     await _bootstrap();
   }
 
+  Future<void> _scheduleDownloads() async {
+    if (_scheduling) return;
+    _scheduling = true;
+    try {
+      final limit = ref.read(downloadSettingsProvider).maxConcurrent;
+      while (state.activeCount < limit) {
+        final task = _nextQueuedTask();
+        if (task == null) return;
+        await _updateTask(
+          task.id,
+          (task) => task.copyWith(
+            status: DownloadTaskStatus.downloading,
+            errorMessage: null,
+          ),
+        );
+        unawaited(_startDownload(task.id));
+      }
+    } finally {
+      _scheduling = false;
+    }
+  }
+
   Future<void> _updateTask(
     String id,
     DownloadTask Function(DownloadTask task) update,
@@ -1283,18 +1820,16 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
 
   Future<void> _startDownload(String id) async {
     final task = _taskById(id);
-    if (task == null || task.status == DownloadTaskStatus.completed) return;
+    if (task == null ||
+        task.status == DownloadTaskStatus.completed ||
+        task.status == DownloadTaskStatus.paused ||
+        task.status == DownloadTaskStatus.cancelled) {
+      return;
+    }
     if (_cancelTokens.containsKey(id)) return;
 
     final token = CancelToken();
     _cancelTokens[id] = token;
-    await _updateTask(
-      id,
-      (task) => task.copyWith(
-        status: DownloadTaskStatus.downloading,
-        errorMessage: null,
-      ),
-    );
 
     try {
       final source = await ref
@@ -1355,6 +1890,7 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     } finally {
       _cancelTokens.remove(id);
       _lastProgressPersistAt.remove(id);
+      unawaited(_scheduleDownloads());
     }
   }
 
@@ -1384,6 +1920,13 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
     return null;
   }
 
+  DownloadTask? _nextQueuedTask() {
+    for (final task in state.tasks.reversed) {
+      if (task.status == DownloadTaskStatus.queued) return task;
+    }
+    return null;
+  }
+
   Track _trackFromTask(DownloadTask task) {
     return Track(
       id:
@@ -1405,10 +1948,11 @@ class DownloadQueueNotifier extends Notifier<DownloadQueueState> {
   }
 
   Future<Directory> _downloadDirectory() async {
-    final base =
-        await getDownloadsDirectory() ??
-        await getApplicationDocumentsDirectory();
-    final directory = Directory(_joinPath(base.path, 'BiliTune'));
+    final settings = ref.read(downloadSettingsProvider);
+    final customPath = settings.directoryPath;
+    final directory = customPath == null || customPath.trim().isEmpty
+        ? await _defaultDownloadDirectory()
+        : Directory(customPath);
     if (!await directory.exists()) {
       await directory.create(recursive: true);
     }
@@ -1625,6 +2169,12 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   PlaybackState build() {
     final initial =
         ref.read(playbackBootstrapProvider) ?? const PlaybackState();
+    ref.listen<PlaybackSettings>(playbackSettingsProvider, (previous, next) {
+      if (previous?.playbackSpeed != next.playbackSpeed ||
+          previous?.loudnessNormalization != next.loudnessNormalization) {
+        unawaited(_applyPlaybackSettings(next));
+      }
+    });
     listenSelf((_, next) {
       _syncSystemMedia(next);
       unawaited(_persistPlaybackState(next));
@@ -1746,6 +2296,32 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
         await platform.setProperty(entry.key, entry.value);
       } catch (_) {}
     }
+    try {
+      final cacheDirectory = await _managedCacheDirectory();
+      await platform.setProperty('cache-dir', cacheDirectory.path);
+    } catch (_) {}
+  }
+
+  Future<void> _applyPlaybackSettings(PlaybackSettings settings) async {
+    final player = _player;
+    if (player == null) return;
+    try {
+      await player.setRate(settings.playbackSpeed);
+    } catch (_) {}
+    await _applyLoudnessNormalization(settings.loudnessNormalization);
+  }
+
+  Future<void> _applyLoudnessNormalization(bool enabled) async {
+    final player = _player;
+    if (player == null) return;
+    final platform = player.platform;
+    if (platform is! mk.NativePlayer) return;
+    try {
+      await platform.setProperty(
+        'af',
+        enabled ? 'lavfi=[loudnorm=I=-16:TP=-1.5:LRA=11]' : '',
+      );
+    } catch (_) {}
   }
 
   Future<void> _tryBackupSource() async {
@@ -1799,6 +2375,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
           ),
           play: true,
         );
+        await _applyPlaybackSettings(ref.read(playbackSettingsProvider));
         return _sourceWithUrl(source, url);
       } catch (error) {
         lastError = error;
@@ -1851,7 +2428,10 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     try {
       final source = await ref
           .read(biliMusicRepositoryProvider)
-          .resolvePlaybackSource(track);
+          .resolvePlaybackSource(
+            track,
+            quality: ref.read(playbackSettingsProvider).audioQuality,
+          );
       final openedSource = await _openPlaybackSource(source);
       state = state.copyWith(source: openedSource, errorMessage: null);
     } catch (error) {
@@ -1933,6 +2513,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     final queue = snapshot.queue.isEmpty ? <Track>[track] : snapshot.queue;
 
     await playTrack(track, queue: queue);
+    await _applyPlaybackSettings(ref.read(playbackSettingsProvider));
     setVolume(volume);
     if (position > Duration.zero) {
       await seek(position);
@@ -2000,8 +2581,13 @@ final playbackProvider = NotifierProvider<PlaybackNotifier, PlaybackState>(
 final nowPlayingLyricsProvider = FutureProvider<List<LyricLine>>((ref) async {
   if (_skipNetworkBootstrap) return const <LyricLine>[];
   final track = ref.watch(playbackProvider.select((state) => state.track));
+  final sourcePreference = ref.watch(
+    playbackSettingsProvider.select((state) => state.lyricsSourcePreference),
+  );
   if (track == null) return const <LyricLine>[];
-  return ref.read(biliMusicRepositoryProvider).trackLyrics(track);
+  return ref
+      .read(biliMusicRepositoryProvider)
+      .trackLyrics(track, sourcePreference: sourcePreference);
 });
 
 final nowPlayingRelatedProvider = FutureProvider<List<Track>>((ref) async {

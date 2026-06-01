@@ -7,6 +7,9 @@
 
 #include "flutter/generated_plugin_registrant.h"
 #include <flutter/standard_method_codec.h>
+#include <shobjidl.h>
+
+#include "utils.h"
 
 namespace {
 
@@ -115,6 +118,7 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   ConfigureHotkeyChannel();
+  ConfigureDownloadChannel();
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -132,6 +136,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   UnregisterHotkeys();
   hotkey_channel_ = nullptr;
+  download_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -225,6 +230,63 @@ void FlutterWindow::ConfigureHotkeyChannel() {
         result->Success(EncodableValue(EncodableMap{
             {EncodableValue("registered"), EncodableValue(registered)},
         }));
+      });
+}
+
+void FlutterWindow::ConfigureDownloadChannel() {
+  download_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.wep56.bilitune/downloads",
+          &flutter::StandardMethodCodec::GetInstance());
+
+  download_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "pickDirectory") {
+          result->NotImplemented();
+          return;
+        }
+
+        IFileOpenDialog* dialog = nullptr;
+        HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr,
+                                      CLSCTX_INPROC_SERVER,
+                                      IID_PPV_ARGS(&dialog));
+        if (FAILED(hr) || dialog == nullptr) {
+          result->Success(EncodableValue());
+          return;
+        }
+
+        DWORD options = 0;
+        dialog->GetOptions(&options);
+        dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM |
+                           FOS_PATHMUSTEXIST);
+
+        hr = dialog->Show(GetHandle());
+        if (FAILED(hr)) {
+          dialog->Release();
+          result->Success(EncodableValue());
+          return;
+        }
+
+        IShellItem* item = nullptr;
+        hr = dialog->GetResult(&item);
+        if (SUCCEEDED(hr) && item != nullptr) {
+          PWSTR path = nullptr;
+          hr = item->GetDisplayName(SIGDN_FILESYSPATH, &path);
+          if (SUCCEEDED(hr) && path != nullptr) {
+            result->Success(EncodableValue(Utf8FromUtf16(path)));
+            CoTaskMemFree(path);
+          } else {
+            result->Success(EncodableValue());
+          }
+          item->Release();
+        } else {
+          result->Success(EncodableValue());
+        }
+
+        dialog->Release();
       });
 }
 

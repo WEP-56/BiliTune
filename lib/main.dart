@@ -38,6 +38,12 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [
+        playbackSettingsBootstrapProvider.overrideWithValue(
+          bootstrap.playbackSettings,
+        ),
+        downloadSettingsBootstrapProvider.overrideWithValue(
+          bootstrap.downloadSettings,
+        ),
         playbackBootstrapProvider.overrideWithValue(bootstrap.playback),
         windowsHotkeyBootstrapProvider.overrideWithValue(bootstrap.hotkeys),
       ],
@@ -49,9 +55,17 @@ Future<void> main() async {
 Future<_BootstrapState> _loadBootstrapState() async {
   try {
     final store = AppLocalStore(SharedPreferencesAsync());
+    final playbackSettings = await store.readPlaybackSettings();
+    final downloadSettings = await store.readDownloadSettings();
     final playback = await store.readPlaybackState();
     final hotkeys = await store.readWindowsHotkeys();
     return _BootstrapState(
+      playbackSettings: playbackSettings == null
+          ? null
+          : PlaybackSettings.fromJson(playbackSettings),
+      downloadSettings: downloadSettings == null
+          ? null
+          : DownloadSettings.fromJson(downloadSettings),
       playback: playback == null ? null : PlaybackState.fromJson(playback),
       hotkeys: _decodeWindowsHotkeys(hotkeys),
     );
@@ -78,10 +92,14 @@ List<WindowsHotkeyBinding> _decodeWindowsHotkeys(
 
 class _BootstrapState {
   const _BootstrapState({
+    this.playbackSettings,
+    this.downloadSettings,
     this.playback,
     this.hotkeys = const <WindowsHotkeyBinding>[],
   });
 
+  final PlaybackSettings? playbackSettings;
+  final DownloadSettings? downloadSettings;
   final PlaybackState? playback;
   final List<WindowsHotkeyBinding> hotkeys;
 }

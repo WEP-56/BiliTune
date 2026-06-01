@@ -6,6 +6,52 @@ const _unset = Object();
 /// (design doc §15: BiliTune handles both audio区 and video稿件.)
 enum ContentType { audio, video }
 
+enum AudioQualityPreference { auto, lossless, high, medium, low }
+
+extension AudioQualityPreferenceX on AudioQualityPreference {
+  String get label => switch (this) {
+    AudioQualityPreference.auto => '自动',
+    AudioQualityPreference.lossless => '无损',
+    AudioQualityPreference.high => '高品质',
+    AudioQualityPreference.medium => '中等',
+    AudioQualityPreference.low => '低品质',
+  };
+
+  String get description => switch (this) {
+    AudioQualityPreference.auto => '自动选择最高音质',
+    AudioQualityPreference.lossless => 'FLAC / Hi-Res',
+    AudioQualityPreference.high => '180-320 kbps',
+    AudioQualityPreference.medium => '100-140 kbps',
+    AudioQualityPreference.low => '60-80 kbps',
+  };
+}
+
+enum LyricsSourcePreference {
+  auto,
+  biliFirst,
+  lrclibFirst,
+  biliOnly,
+  lrclibOnly,
+}
+
+extension LyricsSourcePreferenceX on LyricsSourcePreference {
+  String get label => switch (this) {
+    LyricsSourcePreference.auto => '自动',
+    LyricsSourcePreference.biliFirst => 'Bilibili 优先',
+    LyricsSourcePreference.lrclibFirst => 'LRCLIB 优先',
+    LyricsSourcePreference.biliOnly => '仅 Bilibili',
+    LyricsSourcePreference.lrclibOnly => '仅 LRCLIB',
+  };
+
+  String get description => switch (this) {
+    LyricsSourcePreference.auto => '先用站内歌词，缺失时匹配 LRCLIB',
+    LyricsSourcePreference.biliFirst => '优先使用 Bilibili 音频区歌词或字幕',
+    LyricsSourcePreference.lrclibFirst => '优先按曲目信息匹配 LRCLIB',
+    LyricsSourcePreference.biliOnly => '只显示 Bilibili 返回的歌词或字幕',
+    LyricsSourcePreference.lrclibOnly => '只显示 LRCLIB 匹配结果',
+  };
+}
+
 /// Cover shape encodes type at a glance (design doc §5): rounded-square for
 /// content (album/playlist/track), circle for a creator (UP主).
 enum CoverShape { square, circle }

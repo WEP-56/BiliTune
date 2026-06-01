@@ -8,7 +8,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/platform/windows_directory_picker.dart';
 import '../../core/platform/windows_hotkeys.dart';
+import '../../data/models/models.dart';
 import '../../data/repositories/bili_auth_repository.dart';
 import '../../state/providers.dart';
 
@@ -24,6 +26,13 @@ class SettingsPage extends ConsumerWidget {
         : AppSpacing.s4;
     final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
     final closeBehavior = ref.watch(windowCloseBehaviorProvider);
+    final playbackSettings = ref.watch(playbackSettingsProvider);
+    final downloadSettings = ref.watch(downloadSettingsProvider);
+    final downloadDirectory = ref.watch(downloadDirectoryProvider);
+    final cacheState = ref.watch(cacheProvider);
+    final windowsStartup = Platform.isWindows
+        ? ref.watch(windowsStartupProvider)
+        : const WindowsStartupState();
     final auth = ref.watch(authProvider);
     final account = auth.account;
 
@@ -61,59 +70,125 @@ class SettingsPage extends ConsumerWidget {
         ),
         _Section(
           title: '播放',
-          children: const [
-            _NavTile(
+          children: [
+            _DropdownTile<AudioQualityPreference>(
               icon: Icons.high_quality_outlined,
               title: '默认音质',
-              value: '自动',
+              subtitle: playbackSettings.audioQuality.description,
+              value: playbackSettings.audioQuality,
+              values: AudioQualityPreference.values,
+              labelFor: (value) => value.label,
+              onChanged: (value) => ref
+                  .read(playbackSettingsProvider.notifier)
+                  .setAudioQuality(value),
             ),
-            _NavTile(icon: Icons.speed_rounded, title: '播放倍速', value: '1.0x'),
-            _NavTile(
+            _DropdownTile<double>(
+              icon: Icons.speed_rounded,
+              title: '播放倍速',
+              subtitle: '会立即应用到当前播放器',
+              value: playbackSettings.playbackSpeed,
+              values: const <double>[0.75, 1.0, 1.25, 1.5, 2.0],
+              labelFor: _speedLabel,
+              onChanged: (value) => ref
+                  .read(playbackSettingsProvider.notifier)
+                  .setPlaybackSpeed(value),
+            ),
+            _SwitchTile(
               icon: Icons.equalizer_rounded,
               title: '响度均衡',
-              value: '未启用',
+              subtitle: '使用播放器音频滤镜拉齐不同曲目的响度',
+              value: playbackSettings.loudnessNormalization,
+              onChanged: (value) => ref
+                  .read(playbackSettingsProvider.notifier)
+                  .setLoudnessNormalization(value),
             ),
-            _NavTile(
+            _DropdownTile<LyricsSourcePreference>(
               icon: Icons.lyrics_outlined,
               title: '歌词来源优先级',
-              value: '待实现',
+              subtitle: playbackSettings.lyricsSourcePreference.description,
+              value: playbackSettings.lyricsSourcePreference,
+              values: LyricsSourcePreference.values,
+              labelFor: (value) => value.label,
+              onChanged: (value) => ref
+                  .read(playbackSettingsProvider.notifier)
+                  .setLyricsSourcePreference(value),
             ),
-            _NavTile(
+            _DropdownTile<int>(
               icon: Icons.history_rounded,
               title: '播放历史记录上限',
-              value: '100 条',
+              subtitle: '超过上限时会裁剪本地播放历史',
+              value: playbackSettings.historyLimit,
+              values: const <int>[20, 50, 100, 200, 500],
+              labelFor: (value) => '$value 条',
+              onChanged: (value) => ref
+                  .read(playbackSettingsProvider.notifier)
+                  .setHistoryLimit(value),
             ),
           ],
         ),
         _Section(
           title: '下载',
-          children: const [
-            _NavTile(
+          children: [
+            _DropdownTile<String>(
               icon: Icons.audio_file_outlined,
               title: '下载格式',
-              value: '原始音频',
+              subtitle: '保存 Bilibili 返回的原始音频流',
+              value: downloadSettings.outputFileType,
+              values: const <String>['audio'],
+              labelFor: _downloadFormatLabel,
+              onChanged: (value) => ref
+                  .read(downloadSettingsProvider.notifier)
+                  .setOutputFileType(value),
             ),
-            _NavTile(
+            _DropdownTile<int>(
               icon: Icons.download_for_offline_outlined,
               title: '同时下载数',
-              value: '3',
+              subtitle: '超过上限的任务会保持等待',
+              value: downloadSettings.maxConcurrent,
+              values: const <int>[1, 2, 3, 5],
+              labelFor: (value) => '$value',
+              onChanged: (value) => ref
+                  .read(downloadSettingsProvider.notifier)
+                  .setMaxConcurrent(value),
             ),
             _NavTile(
               icon: Icons.folder_open_outlined,
               title: '本地音乐目录',
-              value: '对应下载路径',
+              value: downloadDirectory.when(
+                data: _compactPath,
+                loading: () => '读取中',
+                error: (_, _) => '读取失败',
+              ),
+              onTap: () => _openDownloadDirectoryDialog(context, ref),
             ),
           ],
         ),
         _Section(
           title: '缓存',
-          children: const [
-            _NavTile(icon: Icons.storage_outlined, title: '缓存大小', value: '待统计'),
+          children: [
+            _NavTile(
+              icon: Icons.storage_outlined,
+              title: '缓存大小',
+              value: cacheState.label,
+              onTap: () => ref.read(cacheProvider.notifier).refresh(),
+            ),
             _NavTile(
               icon: Icons.delete_sweep_outlined,
               title: '清理缓存',
-              value: '待实现',
+              value: cacheState.isLoading ? '处理中' : '立即清理',
+              onTap: cacheState.isLoading
+                  ? null
+                  : () async {
+                      final confirmed = await _confirmClearCache(
+                        context,
+                        cacheState,
+                      );
+                      if (confirmed != true) return;
+                      await ref.read(cacheProvider.notifier).clear();
+                    },
             ),
+            if (cacheState.errorMessage != null)
+              _SectionNote(text: '缓存读取失败：${cacheState.errorMessage}'),
           ],
         ),
         if (Platform.isWindows)
@@ -121,10 +196,19 @@ class SettingsPage extends ConsumerWidget {
             title: 'Windows',
             children: [
               const _SectionNote(text: '全局快捷键默认不绑定，需手动录制后才会在后台生效。'),
-              const _NavTile(
+              _SwitchTile(
                 icon: Icons.bolt_outlined,
                 title: '开机自启动',
-                value: '待实现',
+                subtitle: windowsStartup.isLoading
+                    ? '正在读取 Windows 启动项'
+                    : windowsStartup.errorMessage ??
+                          '登录 Windows 后自动启动 BiliTune',
+                value: windowsStartup.enabled,
+                onChanged: windowsStartup.isLoading
+                    ? null
+                    : (value) => ref
+                          .read(windowsStartupProvider.notifier)
+                          .setEnabled(value),
               ),
               _CloseBehaviorTile(
                 value: closeBehavior,
@@ -217,6 +301,158 @@ Future<WindowsHotkeyBinding?> _recordWindowsHotkey(
   return showDialog<WindowsHotkeyBinding>(
     context: context,
     builder: (_) => _WindowsHotkeyRecordDialog(action: action),
+  );
+}
+
+String _speedLabel(double value) =>
+    '${value.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '')}x';
+
+String _downloadFormatLabel(String value) => switch (value) {
+  'audio' => '原始音频',
+  _ => value,
+};
+
+String _compactPath(String path) {
+  final normalized = path.trim();
+  if (normalized.length <= 42) return normalized;
+  return '...${normalized.substring(normalized.length - 39)}';
+}
+
+Future<void> _openDownloadDirectoryDialog(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final colors = context.colors;
+  final settings = ref.read(downloadSettingsProvider);
+  final currentPath = await ref.read(downloadDirectoryProvider.future);
+  if (!context.mounted) return;
+  if (Platform.isWindows) {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: colors.bgElevated,
+          title: Text(
+            '本地音乐目录',
+            style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+          ),
+          content: Text(
+            currentPath,
+            style: AppTypography.body.copyWith(color: colors.textSecondary),
+          ),
+          actions: [
+            if (settings.directoryPath != null)
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(dialogContext).pop('');
+                  await ref
+                      .read(downloadSettingsProvider.notifier)
+                      .setDirectoryPath(null);
+                },
+                child: const Text('恢复默认'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final selectedPath =
+                    await WindowsDirectoryPicker.pickDirectory();
+                if (selectedPath != null && dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop(selectedPath);
+                }
+              },
+              child: const Text('选择目录'),
+            ),
+          ],
+        );
+      },
+    );
+    if (selected == null || selected.isEmpty) return;
+    await ref
+        .read(downloadSettingsProvider.notifier)
+        .setDirectoryPath(selected);
+    return;
+  }
+
+  if (Platform.isAndroid) {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          backgroundColor: colors.bgElevated,
+          title: Text(
+            '本地音乐目录',
+            style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+          ),
+          content: Text(
+            'Android 使用应用专属外部目录保存下载文件，不需要额外存储权限。\n\n$currentPath',
+            style: AppTypography.body.copyWith(color: colors.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('关闭'),
+            ),
+          ],
+        );
+      },
+    );
+    return;
+  }
+
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        backgroundColor: colors.bgElevated,
+        title: Text(
+          '本地音乐目录',
+          style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+        ),
+        content: Text(
+          currentPath,
+          style: AppTypography.body.copyWith(color: colors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<bool?> _confirmClearCache(BuildContext context, CacheState cacheState) {
+  final colors = context.colors;
+  return showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        backgroundColor: colors.bgElevated,
+        title: Text(
+          '清理缓存',
+          style: AppTypography.titleM.copyWith(color: colors.textPrimary),
+        ),
+        content: Text(
+          '将清理播放器磁盘缓存，当前占用 ${cacheState.label}。',
+          style: AppTypography.body.copyWith(color: colors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('清理'),
+          ),
+        ],
+      );
+    },
   );
 }
 
@@ -714,10 +950,14 @@ class _NavTile extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (value != null)
-                Text(
-                  value!,
-                  style: AppTypography.caption.copyWith(
-                    color: colors.textSecondary,
+                Flexible(
+                  child: Text(
+                    value!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.caption.copyWith(
+                      color: colors.textSecondary,
+                    ),
                   ),
                 ),
               if (onTap != null) ...[
@@ -731,20 +971,71 @@ class _NavTile extends StatelessWidget {
   }
 }
 
-class _SwitchTile extends StatelessWidget {
-  const _SwitchTile({
+class _DropdownTile<T> extends StatelessWidget {
+  const _DropdownTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.value,
+    required this.values,
+    required this.labelFor,
     required this.onChanged,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
+  final T value;
+  final List<T> values;
+  final String Function(T value) labelFor;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return ListTile(
+      leading: Icon(icon, color: colors.textSecondary),
+      title: Text(
+        title,
+        style: AppTypography.body.copyWith(color: colors.textPrimary),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: AppTypography.caption.copyWith(color: colors.textSecondary),
+      ),
+      trailing: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          dropdownColor: colors.bgElevated,
+          borderRadius: AppRadius.mdAll,
+          style: AppTypography.body.copyWith(color: colors.textPrimary),
+          items: [
+            for (final item in values)
+              DropdownMenuItem<T>(value: item, child: Text(labelFor(item))),
+          ],
+          onChanged: (next) {
+            if (next != null) onChanged(next);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _SwitchTile extends StatelessWidget {
+  const _SwitchTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
   final bool value;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool>? onChanged;
 
   @override
   Widget build(BuildContext context) {

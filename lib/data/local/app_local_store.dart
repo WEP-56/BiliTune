@@ -9,6 +9,8 @@ class AppLocalStore {
 
   static const _themeModeKey = 'settings.theme_mode';
   static const _windowCloseBehaviorKey = 'settings.window_close_behavior';
+  static const _playbackSettingsKey = 'settings.playback';
+  static const _downloadSettingsKey = 'settings.download';
   static const _playbackStateKey = 'playback.state';
   static const _playbackHistoryKey = 'playback.history';
   static const _searchHistoryKey = 'search.history';
@@ -28,6 +30,40 @@ class AppLocalStore {
 
   Future<void> saveWindowCloseBehavior(String value) =>
       _prefs.setString(_windowCloseBehaviorKey, value);
+
+  Future<Map<String, dynamic>?> readPlaybackSettings() async {
+    final raw = await _prefs.getString(_playbackSettingsKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {
+      await _prefs.remove(_playbackSettingsKey);
+    }
+    return null;
+  }
+
+  Future<void> savePlaybackSettings(Map<String, dynamic> value) =>
+      _prefs.setString(_playbackSettingsKey, jsonEncode(value));
+
+  Future<Map<String, dynamic>?> readDownloadSettings() async {
+    final raw = await _prefs.getString(_downloadSettingsKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {
+      await _prefs.remove(_downloadSettingsKey);
+    }
+    return null;
+  }
+
+  Future<void> saveDownloadSettings(Map<String, dynamic> value) =>
+      _prefs.setString(_downloadSettingsKey, jsonEncode(value));
 
   Future<Map<String, dynamic>?> readPlaybackState() async {
     final raw = await _prefs.getString(_playbackStateKey);

@@ -36,9 +36,12 @@ class FlutterWindow : public Win32Window {
   // Windows global hotkey bridge.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       hotkey_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      download_channel_;
   std::map<int, std::string> hotkey_actions_;
 
   void ConfigureHotkeyChannel();
+  void ConfigureDownloadChannel();
   void UnregisterHotkeys();
   bool RegisterHotkeyBinding(const std::string& action,
                              const std::string& key,

@@ -191,42 +191,25 @@ class BiliMusicRepository {
   Future<List<Shelf>> musicShelves() async {
     final shelves = <Shelf>[];
 
-    for (final zone in _musicRankingZones) {
-      if (shelves.length >= _maxMusicShelfCount) break;
-      try {
-        final items = await _api.rankingVideos(rid: zone.rid, type: zone.type);
-        if (items.isNotEmpty) {
-          shelves.add(
-            Shelf(
-              title: zone.title,
-              items: items
-                  .map(_cardFromRankingVideo)
-                  .take(8)
-                  .toList(growable: false),
-            ),
-          );
-          continue;
-        }
-      } catch (_) {}
-
-      if (zone.searchKeyword == null || shelves.length >= _maxMusicShelfCount) {
-        continue;
+    for (
+      var index = 0;
+      index < _musicRankingZones.length;
+      index += _musicShelfBatchSize
+    ) {
+      if (shelves.length >= _maxMusicShelfCount) {
+        break;
       }
-
-      try {
-        final items = await _api.searchVideos(
-          zone.searchKeyword!,
-          pageSize: 8,
-          tid: zone.searchTid,
-        );
-        final cards = items
-            .map(_cardFromPopularVideo)
-            .take(8)
-            .toList(growable: false);
-        if (cards.isNotEmpty) {
-          shelves.add(Shelf(title: zone.title, items: cards));
+      final batch = _musicRankingZones
+          .skip(index)
+          .take(_musicShelfBatchSize)
+          .toList(growable: false);
+      final loaded = await Future.wait(batch.map(_musicShelfForZone));
+      for (final shelf in loaded.whereType<Shelf>()) {
+        if (shelves.length >= _maxMusicShelfCount) {
+          break;
         }
-      } catch (_) {}
+        shelves.add(shelf);
+      }
     }
 
     if (shelves.isEmpty) {
@@ -247,6 +230,41 @@ class BiliMusicRepository {
     }
 
     return shelves;
+  }
+
+  Future<Shelf?> _musicShelfForZone(_MusicZone zone) async {
+    try {
+      final items = await _api.rankingVideos(rid: zone.rid, type: zone.type);
+      if (items.isNotEmpty) {
+        return Shelf(
+          title: zone.title,
+          items: items
+              .map(_cardFromRankingVideo)
+              .take(8)
+              .toList(growable: false),
+        );
+      }
+    } catch (_) {}
+
+    final searchKeyword = zone.searchKeyword;
+    if (searchKeyword == null) return null;
+
+    try {
+      final items = await _api.searchVideos(
+        searchKeyword,
+        pageSize: 8,
+        tid: zone.searchTid,
+      );
+      final cards = items
+          .map(_cardFromPopularVideo)
+          .take(8)
+          .toList(growable: false);
+      if (cards.isNotEmpty) {
+        return Shelf(title: zone.title, items: cards);
+      }
+    } catch (_) {}
+
+    return null;
   }
 
   Future<List<BiliFavoriteFolder>> favoriteFolders(int upMid) async {
@@ -401,20 +419,30 @@ class BiliMusicRepository {
     Track track, {
     LyricsSourcePreference sourcePreference = LyricsSourcePreference.auto,
   }) async {
+    _LyricVideoContext? sharedContext;
+    var contextLoaded = false;
+    Future<_LyricVideoContext?> loadContext() async {
+      if (!contextLoaded) {
+        sharedContext = await _lyricVideoContext(track);
+        contextLoaded = true;
+      }
+      return sharedContext;
+    }
+
     switch (sourcePreference) {
       case LyricsSourcePreference.biliOnly:
-        return _biliLyrics(track);
+        return _biliLyrics(track, contextLoader: loadContext);
       case LyricsSourcePreference.lrclibOnly:
-        return _lrclibLyrics(track);
+        return _lrclibLyrics(track, contextLoader: loadContext);
       case LyricsSourcePreference.lrclibFirst:
-        final lrclib = await _lrclibLyrics(track);
+        final lrclib = await _lrclibLyrics(track, contextLoader: loadContext);
         if (lrclib.isNotEmpty) return lrclib;
-        return _biliLyrics(track);
+        return _biliLyrics(track, contextLoader: loadContext);
       case LyricsSourcePreference.biliFirst:
       case LyricsSourcePreference.auto:
-        final bili = await _biliLyrics(track);
+        final bili = await _biliLyrics(track, contextLoader: loadContext);
         if (bili.isNotEmpty) return bili;
-        return _lrclibLyrics(track);
+        return _lrclibLyrics(track, contextLoader: loadContext);
     }
   }
 
@@ -481,19 +509,29 @@ class BiliMusicRepository {
     throw StateError('No playable DASH audio stream returned by Bilibili.');
   }
 
-  Future<List<LyricLine>> _biliLyrics(Track track) async {
+  Future<List<LyricLine>> _biliLyrics(
+    Track track, {
+    Future<_LyricVideoContext?> Function()? contextLoader,
+  }) async {
     if (track.type == ContentType.audio && track.audioId != null) {
       final audioLyrics = await _audioAreaLyrics(track.audioId!);
       if (audioLyrics.isNotEmpty) return audioLyrics;
     }
 
-    final context = await _lyricVideoContext(track);
+    final context = contextLoader == null
+        ? await _lyricVideoContext(track)
+        : await contextLoader();
     if (context == null) return const <LyricLine>[];
     return _videoSubtitleLyrics(context.playerData);
   }
 
-  Future<List<LyricLine>> _lrclibLyrics(Track track) async {
-    final context = await _lyricVideoContext(track);
+  Future<List<LyricLine>> _lrclibLyrics(
+    Track track, {
+    Future<_LyricVideoContext?> Function()? contextLoader,
+  }) async {
+    final context = contextLoader == null
+        ? await _lyricVideoContext(track)
+        : await contextLoader();
     final metadata = await _lyricMetadata(track, context: context);
     final candidates = _lyricQueries(metadata, track);
     for (final candidate in candidates) {
@@ -1327,6 +1365,7 @@ const _audioQualitySort = <int>[
 const _musicRootRid = 3;
 const _musicRankRid = 1003;
 const _maxMusicShelfCount = 6;
+const _musicShelfBatchSize = 2;
 
 const _musicSearchTypeIds = <int>{
   3,

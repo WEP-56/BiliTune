@@ -113,15 +113,15 @@ class Track {
     Duration? duration,
     ContentType? type,
     int? gradientSeed,
-    String? coverUrl,
+    Object? coverUrl = _unset,
     int? playCount,
-    String? bvid,
-    int? aid,
-    int? cid,
-    int? audioId,
-    Uri? webUrl,
-    String? sourceUrl,
-    DateTime? sourceExpiresAt,
+    Object? bvid = _unset,
+    Object? aid = _unset,
+    Object? cid = _unset,
+    Object? audioId = _unset,
+    Object? webUrl = _unset,
+    Object? sourceUrl = _unset,
+    Object? sourceExpiresAt = _unset,
   }) {
     return Track(
       id: id ?? this.id,
@@ -130,15 +130,21 @@ class Track {
       duration: duration ?? this.duration,
       type: type ?? this.type,
       gradientSeed: gradientSeed ?? this.gradientSeed,
-      coverUrl: coverUrl ?? this.coverUrl,
+      coverUrl: identical(coverUrl, _unset)
+          ? this.coverUrl
+          : coverUrl as String?,
       playCount: playCount ?? this.playCount,
-      bvid: bvid ?? this.bvid,
-      aid: aid ?? this.aid,
-      cid: cid ?? this.cid,
-      audioId: audioId ?? this.audioId,
-      webUrl: webUrl ?? this.webUrl,
-      sourceUrl: sourceUrl ?? this.sourceUrl,
-      sourceExpiresAt: sourceExpiresAt ?? this.sourceExpiresAt,
+      bvid: identical(bvid, _unset) ? this.bvid : bvid as String?,
+      aid: identical(aid, _unset) ? this.aid : aid as int?,
+      cid: identical(cid, _unset) ? this.cid : cid as int?,
+      audioId: identical(audioId, _unset) ? this.audioId : audioId as int?,
+      webUrl: identical(webUrl, _unset) ? this.webUrl : webUrl as Uri?,
+      sourceUrl: identical(sourceUrl, _unset)
+          ? this.sourceUrl
+          : sourceUrl as String?,
+      sourceExpiresAt: identical(sourceExpiresAt, _unset)
+          ? this.sourceExpiresAt
+          : sourceExpiresAt as DateTime?,
     );
   }
 

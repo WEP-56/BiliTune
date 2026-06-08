@@ -22,9 +22,6 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final playback = ref.watch(playbackProvider);
-    final track = playback.track;
-    final downloadQueue = ref.read(downloadQueueProvider.notifier);
 
     return Container(
       width: AppLayout.nowPlayingWidth,
@@ -66,95 +63,140 @@ class _NowPlayingPanelState extends ConsumerState<NowPlayingPanel> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: CoverImage(
-                url: track?.coverUrl,
-                gradientSeed: track?.gradientSeed ?? 0,
-                radius: AppRadius.md,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.s4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        track?.title ?? '-',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.titleS.copyWith(
-                          color: colors.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        track?.artist ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.caption.copyWith(
-                          color: colors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  iconSize: 22,
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    Icons.download_outlined,
-                    color: colors.textSecondary,
-                  ),
-                  onPressed: track == null
-                      ? null
-                      : () => downloadQueue.enqueueTrack(track),
-                ),
-                const SizedBox(width: AppSpacing.s4),
-                Icon(
-                  Icons.share_outlined,
-                  color: colors.textSecondary,
-                  size: 22,
-                ),
-              ],
-            ),
-          ),
+          const _NowPlayingTrackSummary(),
           _TabBar(index: _tab, onChanged: (i) => setState(() => _tab = i)),
           const Divider(height: 1),
-          Expanded(child: _tabBody(playback)),
+          Expanded(child: _tabBody()),
         ],
       ),
     );
   }
 
-  Widget _tabBody(PlaybackState playback) {
+  Widget _tabBody() {
     switch (_tab) {
       case 0:
-        return _LyricsPane(
-          lyrics: ref.watch(nowPlayingLyricsProvider),
-          position: playback.position,
-        );
+        return const _LyricsPaneHost();
       case 1:
-        return _QueuePane(
-          playback: playback,
-          onPlay: (track) => ref
-              .read(playbackProvider.notifier)
-              .playTrack(track, queue: playback.queue),
-        );
+        return const _QueuePaneHost();
       default:
-        return _RelatedPane(
-          related: ref.watch(nowPlayingRelatedProvider),
-          onPlay: (track, queue) => ref
-              .read(playbackProvider.notifier)
-              .playTrack(track, queue: queue),
-        );
+        return const _RelatedPaneHost();
     }
+  }
+}
+
+class _NowPlayingTrackSummary extends ConsumerWidget {
+  const _NowPlayingTrackSummary();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final track = ref.watch(playbackProvider.select((state) => state.track));
+    final downloadQueue = ref.read(downloadQueueProvider.notifier);
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s4),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: CoverImage(
+              url: track?.coverUrl,
+              gradientSeed: track?.gradientSeed ?? 0,
+              radius: AppRadius.md,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(AppSpacing.s4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      track?.title ?? '-',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.titleS.copyWith(
+                        color: colors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      track?.artist ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.caption.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                iconSize: 22,
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  Icons.download_outlined,
+                  color: colors.textSecondary,
+                ),
+                onPressed: track == null
+                    ? null
+                    : () => downloadQueue.enqueueTrack(track),
+              ),
+              const SizedBox(width: AppSpacing.s4),
+              Icon(Icons.share_outlined, color: colors.textSecondary, size: 22),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LyricsPaneHost extends ConsumerWidget {
+  const _LyricsPaneHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _LyricsPane(
+      lyrics: ref.watch(nowPlayingLyricsProvider),
+      position: ref.watch(playbackProvider.select((state) => state.position)),
+    );
+  }
+}
+
+class _QueuePaneHost extends ConsumerWidget {
+  const _QueuePaneHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final snapshot = ref.watch(
+      playbackProvider.select(
+        (state) => (queue: state.queue, currentTrackId: state.track?.id),
+      ),
+    );
+    return _QueuePane(
+      queue: snapshot.queue,
+      currentTrackId: snapshot.currentTrackId,
+      onPlay: (track) => ref
+          .read(playbackProvider.notifier)
+          .playTrack(track, queue: snapshot.queue),
+    );
+  }
+}
+
+class _RelatedPaneHost extends ConsumerWidget {
+  const _RelatedPaneHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _RelatedPane(
+      related: ref.watch(nowPlayingRelatedProvider),
+      onPlay: (track, queue) =>
+          ref.read(playbackProvider.notifier).playTrack(track, queue: queue),
+    );
   }
 }
 
@@ -280,21 +322,23 @@ class _LyricsPaneState extends State<_LyricsPane> {
 }
 
 class _QueuePane extends StatelessWidget {
-  const _QueuePane({required this.playback, required this.onPlay});
+  const _QueuePane({
+    required this.queue,
+    required this.currentTrackId,
+    required this.onPlay,
+  });
 
-  final PlaybackState playback;
+  final List<Track> queue;
+  final String? currentTrackId;
   final ValueChanged<Track> onPlay;
 
   @override
   Widget build(BuildContext context) {
-    final queue = playback.queue;
     if (queue.isEmpty) {
       return const _PanelMessage(title: '队列为空', subtitle: '播放搜索结果或歌单后会形成队列。');
     }
 
-    final currentIndex = queue.indexWhere(
-      (item) => item.id == playback.track?.id,
-    );
+    final currentIndex = queue.indexWhere((item) => item.id == currentTrackId);
     return ListView.builder(
       padding: const EdgeInsets.all(AppSpacing.s3),
       itemCount: queue.length + 1,
@@ -307,7 +351,7 @@ class _QueuePane extends StatelessWidget {
         final track = queue[trackIndex];
         return _TrackListTile(
           track: track,
-          selected: track.id == playback.track?.id,
+          selected: track.id == currentTrackId,
           leadingText: '${trackIndex + 1}',
           onTap: () => onPlay(track),
         );

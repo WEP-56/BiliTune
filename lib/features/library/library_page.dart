@@ -15,6 +15,27 @@ import '../../shared/widgets/favorite_folder_dialogs.dart';
 import '../../shared/widgets/track_row.dart';
 import '../../state/providers.dart';
 
+String _downloadedTracksKey(DownloadQueueState state) {
+  return state.completedTasks
+      .map(
+        (task) => [
+          task.id,
+          task.title,
+          task.artist,
+          task.type.name,
+          task.gradientSeed,
+          task.coverUrl ?? '',
+          task.bvid ?? '',
+          task.aid ?? '',
+          task.cid ?? '',
+          task.audioId ?? '',
+          task.savePath ?? '',
+          task.downloadedBytes,
+        ].join('\u001e'),
+      )
+      .join('\u001f');
+}
+
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
 
@@ -42,13 +63,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
     final auth = ref.watch(authProvider);
     final library = ref.watch(libraryProvider);
-    final downloads = ref.watch(downloadQueueProvider);
-    final playback = ref.watch(playbackProvider);
+    ref.watch(downloadQueueProvider.select(_downloadedTracksKey));
+    final downloadedTracks = ref.read(downloadQueueProvider).downloadedTracks;
+    final playback = ref.watch(
+      playbackProvider.select(
+        (state) => (trackId: state.track?.id, isPlaying: state.isPlaying),
+      ),
+    );
     final playbackNotifier = ref.read(playbackProvider.notifier);
     final libraryNotifier = ref.read(libraryProvider.notifier);
 
     final recentTracks = library.recentHistory;
-    final downloadedTracks = downloads.downloadedTracks;
     final playlists = <_PlaylistViewData>[
       _PlaylistViewData.recent(recentTracks.length),
       _PlaylistViewData.downloads(downloadedTracks.length),
@@ -92,7 +117,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       library.isLoading &&
                       selected.kind == _PlaylistKind.folder,
                   searchController: _trackSearchController,
-                  playback: playback,
+                  currentTrackId: playback.trackId,
+                  isCurrentTrackPlaying: playback.isPlaying,
                   onSearchChanged: _scheduleTrackSearch,
                   onPlayTrack: (track) =>
                       playbackNotifier.playTrack(track, queue: selectedTracks),
@@ -134,7 +160,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                 isLoadingTracks:
                     library.isLoading && selected.kind == _PlaylistKind.folder,
                 searchController: _trackSearchController,
-                playback: playback,
+                currentTrackId: playback.trackId,
+                isCurrentTrackPlaying: playback.isPlaying,
                 onSearchChanged: _scheduleTrackSearch,
                 onPlayTrack: (track) =>
                     playbackNotifier.playTrack(track, queue: selectedTracks),
@@ -518,7 +545,8 @@ class _PlaylistDetail extends StatelessWidget {
     required this.trackKeyword,
     required this.isLoadingTracks,
     required this.searchController,
-    required this.playback,
+    required this.currentTrackId,
+    required this.isCurrentTrackPlaying,
     required this.onSearchChanged,
     required this.onPlayTrack,
     required this.onPlayAll,
@@ -530,7 +558,8 @@ class _PlaylistDetail extends StatelessWidget {
   final String trackKeyword;
   final bool isLoadingTracks;
   final TextEditingController searchController;
-  final PlaybackState playback;
+  final String? currentTrackId;
+  final bool isCurrentTrackPlaying;
   final ValueChanged<String> onSearchChanged;
   final void Function(Track track) onPlayTrack;
   final VoidCallback? onPlayAll;
@@ -655,9 +684,9 @@ class _PlaylistDetail extends StatelessWidget {
             TrackRow(
               index: i,
               track: tracks[i],
-              isCurrent: playback.track?.id == tracks[i].id,
+              isCurrent: currentTrackId == tracks[i].id,
               isPlaying:
-                  playback.isPlaying && playback.track?.id == tracks[i].id,
+                  isCurrentTrackPlaying && currentTrackId == tracks[i].id,
               liked: playlist.kind == _PlaylistKind.folder,
               onLike: onRemoveTrack == null
                   ? null

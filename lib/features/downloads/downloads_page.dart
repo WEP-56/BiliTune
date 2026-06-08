@@ -24,7 +24,11 @@ class DownloadsPage extends ConsumerWidget {
         ? AppSpacing.s6
         : AppSpacing.s4;
 
-    final playback = ref.watch(playbackProvider);
+    final playback = ref.watch(
+      playbackProvider.select(
+        (state) => (track: state.track, isPlaying: state.isPlaying),
+      ),
+    );
     final downloadState = ref.watch(downloadQueueProvider);
     final downloadNotifier = ref.read(downloadQueueProvider.notifier);
     final playbackNotifier = ref.read(playbackProvider.notifier);

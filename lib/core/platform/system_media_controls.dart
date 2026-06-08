@@ -15,6 +15,8 @@ class SystemMediaControls extends audio.BaseAudioHandler {
   Future<void> Function()? _onNext;
   Future<void> Function()? _onPrevious;
   Future<void> Function(Duration position)? _onSeek;
+  String? _lastQueueKey;
+  String? _lastMediaItemKey;
 
   Future<void> initialize() async {
     if (!Platform.isAndroid || _initialized) return;
@@ -59,9 +61,18 @@ class SystemMediaControls extends audio.BaseAudioHandler {
   }) {
     if (!_initialized) return;
 
-    final mediaItems = queue.map(_toMediaItem).toList(growable: false);
-    this.queue.add(mediaItems);
-    mediaItem.add(track == null ? null : _toMediaItem(track));
+    final queueKey = queue.map(_mediaItemKey).join('\u001f');
+    if (queueKey != _lastQueueKey) {
+      _lastQueueKey = queueKey;
+      final mediaItems = queue.map(_toMediaItem).toList(growable: false);
+      this.queue.add(mediaItems);
+    }
+
+    final mediaItemKey = track == null ? null : _mediaItemKey(track);
+    if (mediaItemKey != _lastMediaItemKey) {
+      _lastMediaItemKey = mediaItemKey;
+      mediaItem.add(track == null ? null : _toMediaItem(track));
+    }
 
     final queueIndex = track == null
         ? -1
@@ -114,6 +125,14 @@ class SystemMediaControls extends audio.BaseAudioHandler {
       },
     );
   }
+
+  String _mediaItemKey(Track track) => [
+    track.id,
+    track.title,
+    track.artist,
+    track.duration.inMilliseconds,
+    track.coverUrl ?? '',
+  ].join('\u001f');
 
   @override
   Future<void> play() => _onTogglePlay?.call() ?? Future.value();

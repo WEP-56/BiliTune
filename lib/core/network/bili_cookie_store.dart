@@ -10,14 +10,26 @@ class BiliCookieStore {
   static const _credentialKey = 'bili_credential';
 
   final SharedPreferencesAsync _prefs;
+  BiliCredential? _cachedCredential;
+  bool _credentialLoaded = false;
 
   Future<BiliCredential?> readCredential() async {
+    if (_credentialLoaded) return _cachedCredential;
+
     final raw = await _prefs.getString(_credentialKey);
-    if (raw == null || raw.isEmpty) return null;
+    if (raw == null || raw.isEmpty) {
+      _credentialLoaded = true;
+      _cachedCredential = null;
+      return null;
+    }
 
     try {
       final json = jsonDecode(raw) as Map;
-      return BiliCredential.fromJson(Map<String, dynamic>.from(json));
+      _cachedCredential = BiliCredential.fromJson(
+        Map<String, dynamic>.from(json),
+      );
+      _credentialLoaded = true;
+      return _cachedCredential;
     } catch (_) {
       await clearCredential();
       return null;
@@ -30,6 +42,8 @@ class BiliCookieStore {
   }
 
   Future<void> saveCredential(BiliCredential credential) async {
+    _cachedCredential = credential;
+    _credentialLoaded = true;
     await _prefs.setString(_credentialKey, jsonEncode(credential.toJson()));
   }
 
@@ -57,7 +71,11 @@ class BiliCookieStore {
     );
   }
 
-  Future<void> clearCredential() => _prefs.remove(_credentialKey);
+  Future<void> clearCredential() {
+    _cachedCredential = null;
+    _credentialLoaded = true;
+    return _prefs.remove(_credentialKey);
+  }
 
   BiliCredential _credentialFromCookieMap(
     Map<String, String> cookies,

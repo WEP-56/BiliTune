@@ -11,17 +11,14 @@ import '../../shared/widgets/favorite_folder_dialogs.dart';
 /// Mobile floating mini player (design doc §7.3): a 2px brand progress line on
 /// top, compact track info, and quick controls. Tapping opens the full-screen
 /// player.
-class MiniPlayer extends ConsumerWidget {
+class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key, required this.onTap});
 
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final colors = context.colors;
-    final state = ref.watch(playbackProvider);
-    final notifier = ref.read(playbackProvider.notifier);
-    final track = state.track;
 
     return GestureDetector(
       onTap: onTap,
@@ -36,90 +33,117 @@ class MiniPlayer extends ConsumerWidget {
           borderRadius: AppRadius.mdAll,
         ),
         clipBehavior: Clip.antiAlias,
-        child: Column(
+        child: const Column(
           children: [
-            // Top progress line
-            LinearProgressIndicator(
-              value: state.progress,
-              minHeight: 2,
-              backgroundColor: colors.bgActive,
-              valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 44,
-                      height: 44,
-                      child: CoverImage(
-                        url: track?.coverUrl,
-                        gradientSeed: track?.gradientSeed ?? 0,
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.s3),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            track?.title ?? '—',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.body.copyWith(
-                              color: colors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            track?.artist ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.caption.copyWith(
-                              color: colors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      iconSize: 22,
-                      icon: Icon(
-                        state.liked
-                            ? Icons.favorite_rounded
-                            : Icons.favorite_border_rounded,
-                        color: state.liked
-                            ? colors.brand
-                            : colors.textSecondary,
-                      ),
-                      onPressed: track == null
-                          ? null
-                          : () async {
-                              final added = await showAddToFavoriteDialog(
-                                context,
-                                track,
-                              );
-                              if (added == true) notifier.setLiked(true);
-                            },
-                    ),
-                    IconButton(
-                      iconSize: 26,
-                      icon: Icon(
-                        state.isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        color: colors.textPrimary,
-                      ),
-                      onPressed: notifier.togglePlay,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            _MiniProgressLine(),
+            Expanded(child: _MiniPlayerBody()),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MiniProgressLine extends ConsumerWidget {
+  const _MiniProgressLine();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final progress = ref.watch(
+      playbackProvider.select((state) => state.progress),
+    );
+    return LinearProgressIndicator(
+      value: progress,
+      minHeight: 2,
+      backgroundColor: colors.bgActive,
+      valueColor: AlwaysStoppedAnimation<Color>(colors.brand),
+    );
+  }
+}
+
+class _MiniPlayerBody extends ConsumerWidget {
+  const _MiniPlayerBody();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final snapshot = ref.watch(
+      playbackProvider.select(
+        (state) => (
+          track: state.track,
+          liked: state.liked,
+          isPlaying: state.isPlaying,
+        ),
+      ),
+    );
+    final track = snapshot.track;
+    final notifier = ref.read(playbackProvider.notifier);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 44,
+            height: 44,
+            child: CoverImage(
+              url: track?.coverUrl,
+              gradientSeed: track?.gradientSeed ?? 0,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.s3),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  track?.title ?? '—',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.body.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  track?.artist ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.caption.copyWith(
+                    color: colors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            iconSize: 22,
+            icon: Icon(
+              snapshot.liked
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              color: snapshot.liked ? colors.brand : colors.textSecondary,
+            ),
+            onPressed: track == null
+                ? null
+                : () async {
+                    final added = await showAddToFavoriteDialog(context, track);
+                    if (added == true) notifier.setLiked(true);
+                  },
+          ),
+          IconButton(
+            iconSize: 26,
+            icon: Icon(
+              snapshot.isPlaying
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+              color: colors.textPrimary,
+            ),
+            onPressed: notifier.togglePlay,
+          ),
+        ],
       ),
     );
   }

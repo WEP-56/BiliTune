@@ -10,6 +10,7 @@ class BiliWbiSigner {
 
   _WbiKeys? _cachedKeys;
   DateTime? _cachedAt;
+  Future<_WbiKeys?>? _pendingKeys;
 
   Future<Map<String, dynamic>> sign(Map<String, dynamic> params) async {
     final keys = await _getKeys();
@@ -43,6 +44,21 @@ class BiliWbiSigner {
       return _cachedKeys;
     }
 
+    final pending = _pendingKeys;
+    if (pending != null) return pending;
+
+    final request = _fetchKeys(now);
+    _pendingKeys = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_pendingKeys, request)) {
+        _pendingKeys = null;
+      }
+    }
+  }
+
+  Future<_WbiKeys?> _fetchKeys(DateTime fetchedAt) async {
     try {
       final response = await _dio.getUri(BiliApiEndpoints.nav);
       final data = _map(response.data)['data'];
@@ -54,7 +70,7 @@ class BiliWbiSigner {
       final keys = _WbiKeys(_fileStem(imgUrl), _fileStem(subUrl));
       if (keys.imgKey.isEmpty || keys.subKey.isEmpty) return null;
       _cachedKeys = keys;
-      _cachedAt = now;
+      _cachedAt = fetchedAt;
       return keys;
     } catch (_) {
       return null;

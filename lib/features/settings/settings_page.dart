@@ -100,15 +100,6 @@ class SettingsPage extends ConsumerWidget {
                   .read(playbackSettingsProvider.notifier)
                   .setPlaybackSpeed(value),
             ),
-            _SwitchTile(
-              icon: Icons.equalizer_rounded,
-              title: '响度均衡',
-              subtitle: '使用播放器音频滤镜拉齐不同曲目的响度',
-              value: playbackSettings.loudnessNormalization,
-              onChanged: (value) => ref
-                  .read(playbackSettingsProvider.notifier)
-                  .setLoudnessNormalization(value),
-            ),
             _DropdownTile<LyricsSourcePreference>(
               icon: Icons.lyrics_outlined,
               title: '歌词来源优先级',
@@ -346,23 +337,17 @@ Future<void> _showAboutDialog(
               const SizedBox(height: AppSpacing.s4),
               Text(
                 '免责声明',
-                style: AppTypography.titleS.copyWith(
-                  color: colors.textPrimary,
-                ),
+                style: AppTypography.titleS.copyWith(color: colors.textPrimary),
               ),
               const SizedBox(height: AppSpacing.s2),
               Text(
                 'BiliTune 是基于公开网络服务实现的第三方音乐客户端，与 Bilibili 官方无从属、授权或背书关系。请遵守相关平台协议与所在地法律法规使用。',
-                style: AppTypography.body.copyWith(
-                  color: colors.textSecondary,
-                ),
+                style: AppTypography.body.copyWith(color: colors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.s4),
               Text(
                 'GitHub 仓库',
-                style: AppTypography.titleS.copyWith(
-                  color: colors.textPrimary,
-                ),
+                style: AppTypography.titleS.copyWith(color: colors.textPrimary),
               ),
               const SizedBox(height: AppSpacing.s2),
               SelectableText(
@@ -471,16 +456,12 @@ Future<bool?> _confirmInstallUpdate(
             children: [
               Text(
                 '当前版本：${_formatVersionLabel(result.currentVersion)}',
-                style: AppTypography.body.copyWith(
-                  color: colors.textSecondary,
-                ),
+                style: AppTypography.body.copyWith(color: colors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.s2),
               Text(
                 '安装包：$assetLabel',
-                style: AppTypography.body.copyWith(
-                  color: colors.textSecondary,
-                ),
+                style: AppTypography.body.copyWith(color: colors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.s4),
               ConstrainedBox(
@@ -612,10 +593,7 @@ Future<bool?> _confirmAndroidInstallPermission(BuildContext context) {
 }
 
 class _BlockingProgressDialog extends StatelessWidget {
-  const _BlockingProgressDialog({
-    required this.title,
-    required this.message,
-  });
+  const _BlockingProgressDialog({required this.title, required this.message});
 
   final String title;
   final String message;

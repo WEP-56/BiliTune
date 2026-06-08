@@ -27,10 +27,7 @@ class _FullScreenPlayerState extends ConsumerState<FullScreenPlayer> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final playback = ref.watch(playbackProvider);
-    final notifier = ref.read(playbackProvider.notifier);
-    final downloadQueue = ref.read(downloadQueueProvider.notifier);
-    final track = playback.track;
+    final track = ref.watch(playbackProvider.select((state) => state.track));
     final media = MediaQuery.of(context);
     final topInset = media.viewPadding.top + AppSpacing.s3;
     final bottomInset = media.padding.bottom + AppSpacing.s3;
@@ -76,126 +73,18 @@ class _FullScreenPlayerState extends ConsumerState<FullScreenPlayer> {
                 ),
               ),
               const SizedBox(height: AppSpacing.s5),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          track?.title ?? '-',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.titleL.copyWith(
-                            color: colors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.s1),
-                        Text(
-                          track?.artist ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.body.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    iconSize: 28,
-                    icon: Icon(
-                      playback.liked
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      color: playback.liked ? colors.brand : colors.textPrimary,
-                    ),
-                    onPressed: track == null
-                        ? null
-                        : () async {
-                            final added = await showAddToFavoriteDialog(
-                              context,
-                              track,
-                            );
-                            if (added == true) notifier.setLiked(true);
-                          },
-                  ),
-                  IconButton(
-                    iconSize: 24,
-                    icon: Icon(
-                      Icons.download_outlined,
-                      color: colors.textSecondary,
-                    ),
-                    onPressed: track == null
-                        ? null
-                        : () => downloadQueue.enqueueTrack(track),
-                  ),
-                ],
-              ),
+              const _TrackTitleActions(),
               const SizedBox(height: AppSpacing.s4),
-              BiliProgressBar(
-                value: playback.progress,
-                bufferValue: playback.bufferProgress,
-                onChangeEnd: notifier.seekFraction,
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    Format.duration(playback.position),
-                    style: AppTypography.caption.copyWith(
-                      color: colors.textTertiary,
-                    ),
-                  ),
-                  Text(
-                    Format.duration(playback.duration),
-                    style: AppTypography.caption.copyWith(
-                      color: colors.textTertiary,
-                    ),
-                  ),
-                ],
-              ),
+              const _FullScreenProgressControls(),
               const SizedBox(height: AppSpacing.s3),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _TransportIcon(
-                    icon: Icons.shuffle_rounded,
-                    active: playback.shuffle,
-                    onPressed: notifier.toggleShuffle,
-                  ),
-                  _TransportIcon(
-                    icon: Icons.skip_previous_rounded,
-                    size: 40,
-                    onPressed: notifier.previous,
-                  ),
-                  PlayButton(
-                    isPlaying: playback.isPlaying,
-                    size: 64,
-                    onTap: notifier.togglePlay,
-                  ),
-                  _TransportIcon(
-                    icon: Icons.skip_next_rounded,
-                    size: 40,
-                    onPressed: notifier.next,
-                  ),
-                  _TransportIcon(
-                    icon: playback.repeat == PlayRepeatMode.one
-                        ? Icons.repeat_one_rounded
-                        : Icons.repeat_rounded,
-                    active: playback.repeat != PlayRepeatMode.off,
-                    onPressed: notifier.cycleRepeat,
-                  ),
-                ],
-              ),
+              const _FullScreenTransportControls(),
               const SizedBox(height: AppSpacing.s4),
               _MobilePlayerTabs(
                 index: _tab,
                 onChanged: (index) => setState(() => _tab = index),
               ),
               const SizedBox(height: AppSpacing.s2),
-              Expanded(child: _tabBody(playback)),
+              Expanded(child: _tabBody()),
             ],
           ),
         ),
@@ -203,24 +92,215 @@ class _FullScreenPlayerState extends ConsumerState<FullScreenPlayer> {
     );
   }
 
-  Widget _tabBody(PlaybackState playback) {
+  Widget _tabBody() {
     return switch (_tab) {
-      0 => _LyricsPane(
-        lyrics: ref.watch(nowPlayingLyricsProvider),
-        position: playback.position,
-      ),
-      1 => _QueuePane(
-        playback: playback,
-        onPlay: (track) => ref
-            .read(playbackProvider.notifier)
-            .playTrack(track, queue: playback.queue),
-      ),
-      _ => _RelatedPane(
-        related: ref.watch(nowPlayingRelatedProvider),
-        onPlay: (track, queue) =>
-            ref.read(playbackProvider.notifier).playTrack(track, queue: queue),
-      ),
+      0 => const _LyricsPaneHost(),
+      1 => const _QueuePaneHost(),
+      _ => const _RelatedPaneHost(),
     };
+  }
+}
+
+class _TrackTitleActions extends ConsumerWidget {
+  const _TrackTitleActions();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final snapshot = ref.watch(
+      playbackProvider.select(
+        (state) => (track: state.track, liked: state.liked),
+      ),
+    );
+    final track = snapshot.track;
+    final notifier = ref.read(playbackProvider.notifier);
+    final downloadQueue = ref.read(downloadQueueProvider.notifier);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                track?.title ?? '-',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.titleL.copyWith(color: colors.textPrimary),
+              ),
+              const SizedBox(height: AppSpacing.s1),
+              Text(
+                track?.artist ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.body.copyWith(color: colors.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          iconSize: 28,
+          icon: Icon(
+            snapshot.liked
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            color: snapshot.liked ? colors.brand : colors.textPrimary,
+          ),
+          onPressed: track == null
+              ? null
+              : () async {
+                  final added = await showAddToFavoriteDialog(context, track);
+                  if (added == true) notifier.setLiked(true);
+                },
+        ),
+        IconButton(
+          iconSize: 24,
+          icon: Icon(Icons.download_outlined, color: colors.textSecondary),
+          onPressed: track == null
+              ? null
+              : () => downloadQueue.enqueueTrack(track),
+        ),
+      ],
+    );
+  }
+}
+
+class _FullScreenProgressControls extends ConsumerWidget {
+  const _FullScreenProgressControls();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final snapshot = ref.watch(
+      playbackProvider.select(
+        (state) => (
+          position: state.position,
+          duration: state.duration,
+          progress: state.progress,
+          bufferProgress: state.bufferProgress,
+        ),
+      ),
+    );
+
+    return Column(
+      children: [
+        BiliProgressBar(
+          value: snapshot.progress,
+          bufferValue: snapshot.bufferProgress,
+          onChangeEnd: ref.read(playbackProvider.notifier).seekFraction,
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              Format.duration(snapshot.position),
+              style: AppTypography.caption.copyWith(color: colors.textTertiary),
+            ),
+            Text(
+              Format.duration(snapshot.duration),
+              style: AppTypography.caption.copyWith(color: colors.textTertiary),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _FullScreenTransportControls extends ConsumerWidget {
+  const _FullScreenTransportControls();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final snapshot = ref.watch(
+      playbackProvider.select(
+        (state) => (
+          isPlaying: state.isPlaying,
+          shuffle: state.shuffle,
+          repeat: state.repeat,
+        ),
+      ),
+    );
+    final notifier = ref.read(playbackProvider.notifier);
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _TransportIcon(
+          icon: Icons.shuffle_rounded,
+          active: snapshot.shuffle,
+          onPressed: notifier.toggleShuffle,
+        ),
+        _TransportIcon(
+          icon: Icons.skip_previous_rounded,
+          size: 40,
+          onPressed: notifier.previous,
+        ),
+        PlayButton(
+          isPlaying: snapshot.isPlaying,
+          size: 64,
+          onTap: notifier.togglePlay,
+        ),
+        _TransportIcon(
+          icon: Icons.skip_next_rounded,
+          size: 40,
+          onPressed: notifier.next,
+        ),
+        _TransportIcon(
+          icon: snapshot.repeat == PlayRepeatMode.one
+              ? Icons.repeat_one_rounded
+              : Icons.repeat_rounded,
+          active: snapshot.repeat != PlayRepeatMode.off,
+          onPressed: notifier.cycleRepeat,
+        ),
+      ],
+    );
+  }
+}
+
+class _LyricsPaneHost extends ConsumerWidget {
+  const _LyricsPaneHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _LyricsPane(
+      lyrics: ref.watch(nowPlayingLyricsProvider),
+      position: ref.watch(playbackProvider.select((state) => state.position)),
+    );
+  }
+}
+
+class _QueuePaneHost extends ConsumerWidget {
+  const _QueuePaneHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final snapshot = ref.watch(
+      playbackProvider.select(
+        (state) => (queue: state.queue, currentTrackId: state.track?.id),
+      ),
+    );
+    return _QueuePane(
+      queue: snapshot.queue,
+      currentTrackId: snapshot.currentTrackId,
+      onPlay: (track) => ref
+          .read(playbackProvider.notifier)
+          .playTrack(track, queue: snapshot.queue),
+    );
+  }
+}
+
+class _RelatedPaneHost extends ConsumerWidget {
+  const _RelatedPaneHost();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _RelatedPane(
+      related: ref.watch(nowPlayingRelatedProvider),
+      onPlay: (track, queue) =>
+          ref.read(playbackProvider.notifier).playTrack(track, queue: queue),
+    );
   }
 }
 
@@ -467,14 +547,18 @@ class _LyricsPaneState extends State<_LyricsPane> {
 }
 
 class _QueuePane extends StatelessWidget {
-  const _QueuePane({required this.playback, required this.onPlay});
+  const _QueuePane({
+    required this.queue,
+    required this.currentTrackId,
+    required this.onPlay,
+  });
 
-  final PlaybackState playback;
+  final List<Track> queue;
+  final String? currentTrackId;
   final ValueChanged<Track> onPlay;
 
   @override
   Widget build(BuildContext context) {
-    final queue = playback.queue;
     if (queue.isEmpty) {
       return const _PanelMessage(title: '队列为空', subtitle: '播放搜索结果或歌单后会形成播放队列。');
     }
@@ -485,7 +569,7 @@ class _QueuePane extends StatelessWidget {
         final track = queue[index];
         return _TrackTile(
           track: track,
-          selected: track.id == playback.track?.id,
+          selected: track.id == currentTrackId,
           leadingText: '${index + 1}',
           onTap: () => onPlay(track),
         );

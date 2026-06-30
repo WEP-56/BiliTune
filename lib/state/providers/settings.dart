@@ -94,18 +94,21 @@ class PlaybackSettings {
     this.audioQuality = AudioQualityPreference.auto,
     this.playbackSpeed = 1.0,
     this.lyricsSourcePreference = LyricsSourcePreference.auto,
+    this.immersiveDefaultTheme = ImmersiveThemePreference.standard,
     this.historyLimit = 100,
   });
 
   final AudioQualityPreference audioQuality;
   final double playbackSpeed;
   final LyricsSourcePreference lyricsSourcePreference;
+  final ImmersiveThemePreference immersiveDefaultTheme;
   final int historyLimit;
 
   PlaybackSettings copyWith({
     AudioQualityPreference? audioQuality,
     double? playbackSpeed,
     LyricsSourcePreference? lyricsSourcePreference,
+    ImmersiveThemePreference? immersiveDefaultTheme,
     int? historyLimit,
   }) {
     return PlaybackSettings(
@@ -113,6 +116,8 @@ class PlaybackSettings {
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       lyricsSourcePreference:
           lyricsSourcePreference ?? this.lyricsSourcePreference,
+      immersiveDefaultTheme:
+          immersiveDefaultTheme ?? this.immersiveDefaultTheme,
       historyLimit: historyLimit ?? this.historyLimit,
     );
   }
@@ -122,6 +127,7 @@ class PlaybackSettings {
       'audioQuality': audioQuality.name,
       'playbackSpeed': playbackSpeed,
       'lyricsSourcePreference': lyricsSourcePreference.name,
+      'immersiveDefaultTheme': immersiveDefaultTheme.name,
       'historyLimit': historyLimit,
     };
   }
@@ -139,9 +145,28 @@ class PlaybackSettings {
         json['lyricsSourcePreference'],
         LyricsSourcePreference.auto,
       ),
+      immersiveDefaultTheme: _enumFromName(
+        ImmersiveThemePreference.values,
+        json['immersiveDefaultTheme'],
+        ImmersiveThemePreference.standard,
+      ),
       historyLimit: _clampHistoryLimit(json['historyLimit']),
     );
   }
+}
+
+enum ImmersiveThemePreference {
+  standard('普通'),
+  vinyl('黑胶'),
+  tilt('倾诉'),
+  fume('浮名'),
+  partita('云阶');
+
+  const ImmersiveThemePreference(this.label);
+
+  final String label;
+
+  String get description => '打开沉浸模式时默认进入$label主题';
 }
 
 T _enumFromName<T extends Enum>(List<T> values, Object? raw, T fallback) {
@@ -281,6 +306,9 @@ class PlaybackSettingsNotifier extends Notifier<PlaybackSettings> {
 
   Future<void> setLyricsSourcePreference(LyricsSourcePreference value) =>
       _update(state.copyWith(lyricsSourcePreference: value));
+
+  Future<void> setImmersiveDefaultTheme(ImmersiveThemePreference value) =>
+      _update(state.copyWith(immersiveDefaultTheme: value));
 
   Future<void> setHistoryLimit(int value) async {
     final limit = _clampHistoryLimit(value);

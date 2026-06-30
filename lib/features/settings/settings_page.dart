@@ -111,6 +111,17 @@ class SettingsPage extends ConsumerWidget {
                   .read(playbackSettingsProvider.notifier)
                   .setLyricsSourcePreference(value),
             ),
+            _DropdownTile<ImmersiveThemePreference>(
+              icon: Icons.fullscreen_rounded,
+              title: '沉浸模式默认主题',
+              subtitle: playbackSettings.immersiveDefaultTheme.description,
+              value: playbackSettings.immersiveDefaultTheme,
+              values: ImmersiveThemePreference.values,
+              labelFor: (value) => value.label,
+              onChanged: (value) => ref
+                  .read(playbackSettingsProvider.notifier)
+                  .setImmersiveDefaultTheme(value),
+            ),
             _DropdownTile<int>(
               icon: Icons.history_rounded,
               title: '播放历史记录上限',

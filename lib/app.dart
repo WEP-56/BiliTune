@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/platform/windows_hotkeys.dart';
+import 'shared/widgets/startup_reveal.dart';
 import 'state/providers.dart';
 
 /// Root widget: wires the router and the dark/light themes, switching theme
@@ -70,7 +71,13 @@ class _BiliTuneAppState extends ConsumerState<BiliTuneApp>
       routerConfig: appRouter,
       builder: (context, child) {
         final content = child ?? const SizedBox.shrink();
-        return Platform.isWindows ? ExcludeSemantics(child: content) : content;
+        final app = Stack(
+          children: [
+            content,
+            const Positioned.fill(child: StartupReveal()),
+          ],
+        );
+        return Platform.isWindows ? ExcludeSemantics(child: app) : app;
       },
     );
   }

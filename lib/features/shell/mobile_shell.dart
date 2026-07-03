@@ -33,31 +33,17 @@ class MobileShell extends ConsumerWidget {
     final hasTrack = ref.watch(
       playbackProvider.select((state) => state.track != null),
     );
-    final bottomInset = MediaQuery.of(context).padding.bottom;
     return Scaffold(
       body: SafeArea(bottom: false, child: navigationShell),
-      bottomNavigationBar: Stack(
-        clipBehavior: Clip.none,
+      floatingActionButton: hasTrack
+          ? _MobileImmersiveFab(onTap: () => showImmersivePlayer(context))
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              MiniPlayer(onTap: () => _openFullScreen(context)),
-              _BottomTabs(navigationShell: navigationShell),
-            ],
-          ),
-          if (hasTrack)
-            Positioned(
-              right: AppSpacing.s4,
-              bottom:
-                  bottomInset +
-                  AppLayout.bottomNavHeight +
-                  AppLayout.miniPlayerHeight +
-                  AppSpacing.s5,
-              child: _MobileImmersiveFab(
-                onTap: () => showImmersivePlayer(context),
-              ),
-            ),
+          MiniPlayer(onTap: () => _openFullScreen(context)),
+          _BottomTabs(navigationShell: navigationShell),
         ],
       ),
     );
